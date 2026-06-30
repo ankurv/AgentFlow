@@ -3,6 +3,8 @@ import json
 import subprocess
 import tempfile
 import unittest
+import uuid
+from pathlib import Path
 
 from backend.agents.base import AgentBase, AgentConfig, Usage
 from backend.agents.providers import CLIAgent
@@ -34,10 +36,16 @@ class FakeCLI(CLIAgent):
     def __init__(self, config, outputs):
         self.outputs = iter(outputs)
         self.commands = []
+        self.fake_conversation_id = str(uuid.uuid4())
         super().__init__(config)
 
     def _run(self, argv, cwd=None):
         self.commands.append((argv, cwd))
+        if "--log-file" in argv:
+            log_path = Path(argv[argv.index("--log-file") + 1])
+            log_path.write_text(
+                f"Print mode: conversation={self.fake_conversation_id}, sending message\n"
+            )
         stdout = next(self.outputs)
         return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
 
@@ -100,10 +108,12 @@ class SessionTests(unittest.TestCase):
                 "input_tokens": 12, "cached_input_tokens": 8, "output_tokens": 3,
             }}),
         ])
+        project = tempfile.mkdtemp()
         agent = FakeCLI(
             AgentConfig(
                 name="codex",
                 kind="cli",
+                working_directory=project,
                 cli_command="codex exec --ephemeral --skip-git-repo-check",
             ),
             [first, second],
@@ -121,10 +131,14 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(second_command[-1], "turn two")
         self.assertNotIn("turn one", second_command[-1])
         self.assertEqual(agent.total_cached_input_tokens, 10)
+        self.assertEqual(Path(agent.commands[0][1]), Path(project).resolve())
+        self.assertEqual(Path(agent.commands[1][1]), Path(project).resolve())
 
-    def test_antigravity_uses_isolated_continue_session(self):
+    def test_antigravity_resumes_exact_isolated_conversation(self):
+        project = tempfile.mkdtemp()
         agent = FakeCLI(
-            AgentConfig(name="agy", kind="cli", cli_command="agy -p"),
+            AgentConfig(id="agy-1", name="agy", kind="cli", cli_command="agy -p",
+                        working_directory=project),
             ["first", "second"],
         )
         agent.send("turn one")
@@ -132,20 +146,47 @@ class SessionTests(unittest.TestCase):
 
         first_command, first_cwd = agent.commands[0]
         second_command, second_cwd = agent.commands[1]
-        self.assertEqual(first_command[:2], ["agy", "-p"])
-        self.assertIn("--continue", second_command)
+        self.assertEqual(first_command[0], "agy")
+        self.assertNotIn("--continue", second_command)
+        self.assertIn("--conversation", second_command)
+        self.assertIn(agent.fake_conversation_id, second_command)
         self.assertEqual(first_cwd, second_cwd)
-        self.assertTrue(agent.provider_session_id().startswith("cwd:"))
+        self.assertEqual(Path(first_cwd), Path(project).resolve())
+        log_path = Path(first_command[first_command.index("--log-file") + 1])
+        self.assertEqual(log_path.parent.parent, Path(project).resolve() / ".agentflow" / "sessions")
+        self.assertEqual(agent.provider_session_id(), agent.fake_conversation_id)
 
     def test_duplicate_cli_agents_have_independent_sessions(self):
-        config_a = AgentConfig(name="architect", role="architecture", kind="cli", cli_command="agy")
-        config_b = AgentConfig(name="skeptic", role="risk review", kind="cli", cli_command="agy")
+        project = tempfile.mkdtemp()
+        config_a = AgentConfig(id="architect", name="architect", role="architecture",
+                               kind="cli", cli_command="agy", working_directory=project)
+        config_b = AgentConfig(id="skeptic", name="skeptic", role="risk review",
+                               kind="cli", cli_command="agy", working_directory=project)
         first = FakeCLI(config_a, ["one"])
         second = FakeCLI(config_b, ["two"])
         first.send("hello")
         second.send("hello")
         self.assertNotEqual(first._session_cwd, second._session_cwd)
         self.assertNotEqual(first.provider_session_id(), second.provider_session_id())
+        self.assertIn(first.fake_conversation_id, first.commands[1][0] if len(first.commands) > 1 else [first.provider_session_id()])
+
+    def test_stateless_cli_runs_from_selected_project(self):
+        project = tempfile.mkdtemp()
+        agent = FakeCLI(
+            AgentConfig(name="custom", kind="cli", cli_command="custom-agent",
+                        working_directory=project, extra={"session_mode": "stateless"}),
+            ["reply"],
+        )
+        agent.send("hello")
+        self.assertEqual(Path(agent.commands[0][1]), Path(project).resolve())
+
+    def test_real_cli_process_inherits_selected_project_directory(self):
+        with tempfile.TemporaryDirectory() as project:
+            agent = CLIAgent(AgentConfig(
+                name="pwd", kind="cli", cli_command="/bin/sh -c pwd",
+                working_directory=project, extra={"session_mode": "stateless"},
+            ))
+            self.assertEqual(Path(agent.send("where am I?").strip()), Path(project).resolve())
 
     def test_orchestrator_has_no_seed_or_transition_generation(self):
         debate = """## DESIGN_APPEND

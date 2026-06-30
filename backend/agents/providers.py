@@ -169,8 +169,24 @@ class CLIAgent(AgentBase):
     def __init__(self, config: AgentConfig):
         super().__init__(config)
         self._provider_session_id = ""
-        self._session_cwd = tempfile.mkdtemp(prefix=f"agentflow-{self._session_id}-")
+        self._configure_working_directories(config)
         self._configure_command(config)
+
+    def _configure_working_directories(self, config: AgentConfig):
+        raw = config.working_directory.strip()
+        if raw:
+            project = Path(raw).expanduser().resolve()
+            if not project.is_dir():
+                raise ValueError(f"CLI project folder does not exist: {project}")
+            self._workspace_cwd = str(project)
+            session_key = re.sub(r"[^A-Za-z0-9_.-]", "-", config.id or self._session_id)
+            session = project / ".agentflow" / "sessions" / session_key
+            session.mkdir(parents=True, exist_ok=True)
+            self._session_cwd = str(session)
+        else:
+            # Direct library users may omit a project root. The server always injects one.
+            self._workspace_cwd = ""
+            self._session_cwd = tempfile.mkdtemp(prefix=f"agentflow-{self._session_id}-")
 
     def _configure_command(self, config: AgentConfig):
         previous_mode = getattr(self, "_session_mode", "")
@@ -193,12 +209,19 @@ class CLIAgent(AgentBase):
             self._provider_session_id = ""
 
     def reconfigure(self, config: AgentConfig):
-        previous = (self.config, list(self._argv), self._session_mode, self.manages_context)
+        previous = (
+            self.config, list(self._argv), self._session_mode, self.manages_context,
+            self._workspace_cwd, self._session_cwd,
+        )
         try:
             super().reconfigure(config)
+            self._configure_working_directories(config)
             self._configure_command(config)
         except Exception:
-            self.config, self._argv, self._session_mode, self.manages_context = previous
+            (
+                self.config, self._argv, self._session_mode, self.manages_context,
+                self._workspace_cwd, self._session_cwd,
+            ) = previous
             raise
 
     def _raw_send(self, messages: list[dict], system: str) -> tuple[str, Usage]:
@@ -240,7 +263,7 @@ class CLIAgent(AgentBase):
             argv = prefix + ["resume"] + options + ["--json", self._provider_session_id, prompt]
         else:
             argv = prefix + options + ["--json", prompt]
-        result = self._run(argv)
+        result = self._run(argv, cwd=self._workspace_cwd or None)
 
         text = ""
         usage = Usage(estimated=True)
@@ -269,7 +292,18 @@ class CLIAgent(AgentBase):
         return text, usage
 
     def _antigravity_base_args(self) -> list[str]:
-        args = list(self._argv)
+        args = []
+        skip_value = False
+        for arg in self._argv:
+            if skip_value:
+                skip_value = False
+                continue
+            if arg in {"--conversation", "--log-file"}:
+                skip_value = True
+                continue
+            if arg in {"--continue", "-c"}:
+                continue
+            args.append(arg)
         # AgentFlow supplies the prompt, so a trailing prompt flag belongs to
         # the adapter rather than the configured base command.
         if args and args[-1] in {"-p", "--prompt"}:
@@ -279,25 +313,44 @@ class CLIAgent(AgentBase):
     def _send_antigravity(self, message: str, system: str) -> tuple[str, Usage]:
         args = self._antigravity_base_args()
         prompt = self._initial_prompt(message, system) if not self._provider_session_id else message
-        if self._provider_session_id and not self._provider_session_id.startswith("cwd:"):
+        log_path = Path(self._session_cwd) / "agy.log"
+        try:
+            log_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        args += ["--log-file", str(log_path)]
+        if self._provider_session_id:
             args += ["--conversation", self._provider_session_id]
-        elif self._provider_session_id.startswith("cwd:"):
-            args += ["--continue"]
-        result = self._run(args + ["-p", prompt], cwd=self._session_cwd)
-        combined = f"{result.stdout}\n{result.stderr}"
+        result = self._run(args + ["-p", prompt], cwd=self._workspace_cwd or self._session_cwd)
+        try:
+            log_text = log_path.read_text(errors="replace")
+        except OSError:
+            log_text = ""
+        combined = f"{result.stdout}\n{result.stderr}\n{log_text}"
         match = re.search(
-            r"(?:conversation|session)[^0-9a-f]*([0-9a-f]{8}-[0-9a-f-]{27,})",
+            r"(?:conversation|session)(?:_?id)?\s*(?:=|:)\s*[\"']?"
+            r"([0-9a-f]{8}-[0-9a-f-]{27,})",
             combined,
             re.IGNORECASE,
         )
         if match:
             self._provider_session_id = match.group(1)
         elif not self._provider_session_id:
-            # Conversation histories are scoped to cwd; --continue is safe
-            # because every AgentFlow agent owns a unique session directory.
-            self._provider_session_id = f"cwd:{self._session_cwd}"
+            raise RuntimeError(
+                "Antigravity completed the turn but did not expose its conversation ID; "
+                "refusing unsafe global --continue"
+            )
         text = result.stdout.strip()
         return text, self._estimated_usage(prompt, text)
+
+    def state_dict(self) -> dict:
+        state = super().state_dict()
+        state.update({
+            "session_mode": self._session_mode,
+            "context_reused": bool(self._provider_session_id and len(self.history) > 2),
+            "cache_reporting": "exact" if self._session_mode == "codex" else "unavailable",
+        })
+        return state
 
     def _send_stateless(self, messages: list[dict], system: str) -> tuple[str, Usage]:
         parts = [f"[SYSTEM]\n{system}\n"] if system else []
@@ -306,7 +359,7 @@ class CLIAgent(AgentBase):
             parts.append(f"[{label}]\n{message['content']}")
         parts.append("[ASSISTANT]")
         prompt = "\n\n".join(parts)
-        result = self._run(self._argv + [prompt])
+        result = self._run(self._argv + [prompt], cwd=self._workspace_cwd or None)
         text = result.stdout.strip()
         return text, self._estimated_usage(prompt, text)
 

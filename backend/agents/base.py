@@ -61,6 +61,8 @@ class AgentConfig:
     role: str = ""
     model: str = ""
     api_key: str = ""
+    # Runtime-only project root. It is injected by the server and never persisted.
+    working_directory: str = ""
     cli_command: str = ""
     system_prompt: str = ""
     max_history_turns: int = 20

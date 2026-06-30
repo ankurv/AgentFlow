@@ -40,7 +40,7 @@ class AppState:
         self.current_idea = ""
 
     def open_project(self, path: str) -> Workspace:
-        if self.status in {"running", "paused"}:
+        if self.status in {"running", "paused", "needs_attention"}:
             raise ValueError("Stop the active run before changing projects")
         workspace = Workspace(path)
         workspace.ensure()
@@ -168,6 +168,7 @@ def to_agent_config(config: dict) -> AgentConfig:
         id=config.get("id", ""), name=config["name"], kind=config["kind"],
         role=config.get("role", ""), model=config.get("model", ""),
         api_key=config.get("api_key", ""), cli_command=config.get("cli_command", ""),
+        working_directory=state.workspace.path if state.workspace else "",
         system_prompt=config.get("system_prompt", ""),
         max_history_turns=config.get("max_history_turns", 20),
         extra=config.get("extra", {}),

@@ -91,6 +91,12 @@ Antigravity continuation, OpenAI Responses `previous_response_id`, and Gemini ch
 sessions. Arbitrary CLI commands use stateless mode because AgentFlow cannot infer a
 safe vendor-specific resume protocol for them.
 
+All CLI subprocesses run with the selected project as their working directory, so
+relative file writes cannot leak into the AgentFlow application repository. AgentFlow
+captures Antigravity's exact conversation ID in a private per-agent log under
+`<project>/.agentflow/sessions/` and resumes it with `--conversation`; it never uses
+the unsafe global `--continue` fallback.
+
 ## Usage and cost tracking
 
 The live sidebar shows input, cached-input, output, and total tokens per agent.
@@ -100,6 +106,9 @@ and output USD-per-million-token rates on each agent card.
 
 CLI subscription usage and local Ollama usage do not have a reliable per-token dollar
 price, so the UI displays them as unpriced unless you configure explicit rates.
+Codex reports cached-input tokens in its JSON event stream. Antigravity preserves and
+resumes the exact conversation, but `agy` does not expose cached-token counts, so the
+UI labels its cache usage as **unreported** instead of incorrectly displaying zero.
 
 For authenticated CLI sessions, use the `cli` kind and leave the API key blank:
 

@@ -635,6 +635,9 @@ async function fetchAgentStatus() {
     const color = agentColors[a.name] || '#64748b';
     const statusColor = {thinking:'var(--yellow)',waiting:'var(--yellow)',done:'var(--green)',error:'var(--red)',idle:'var(--muted)'}[a.status] || 'var(--muted)';
     const cost = a.pricing_known ? formatCost(a.cost_usd || 0) : 'cost n/a';
+    const cacheUsage = a.cache_reporting === 'unavailable'
+      ? `${a.context_reused ? 'session resumed' : 'session new'} · cache usage unreported`
+      : `cached ${(a.cached_input_tokens||0).toLocaleString()}`;
     const pct = Math.max(0, Math.min(100, ((a.total_tokens||0) / maxTokens) * 100));
     const retry = a.status === 'waiting' && a.retry_at
       ? `<div class="usage-detail" style="color:var(--yellow)">retry scheduled ${new Date(a.retry_at).toLocaleTimeString()}</div>`
@@ -653,7 +656,7 @@ async function fetchAgentStatus() {
         <div class="token-count">${(a.total_tokens||0).toLocaleString()} tok · ${cost}</div>
       </div>
       </div>
-      <div class="usage-detail">in ${(a.input_tokens||0).toLocaleString()} · cached ${(a.cached_input_tokens||0).toLocaleString()} · out ${(a.output_tokens||0).toLocaleString()}</div>
+      <div class="usage-detail">in ${(a.input_tokens||0).toLocaleString()} · ${cacheUsage} · out ${(a.output_tokens||0).toLocaleString()}</div>
       ${retry}
       <div class="usage-track"><div class="usage-fill" style="width:${pct}%;background:${color}"></div></div>
     </div>`;
@@ -661,10 +664,11 @@ async function fetchAgentStatus() {
 
   totalTokens = (res.agents || []).reduce((sum, a) => sum + (a.total_tokens || 0), 0);
   const cached = (res.agents || []).reduce((sum, a) => sum + (a.cached_input_tokens || 0), 0);
+  const hasUnreportedCache = (res.agents || []).some(a => a.cache_reporting === 'unavailable');
   totalCost = (res.agents || []).reduce((sum, a) => sum + (a.cost_usd || 0), 0);
   const allKnown = (res.agents || []).every(a => a.pricing_known);
   document.getElementById('totalTokens').textContent = totalTokens.toLocaleString();
-  document.getElementById('totalCachedTokens').textContent = cached.toLocaleString();
+  document.getElementById('totalCachedTokens').textContent = cached.toLocaleString() + (hasUnreportedCache ? ' + unreported' : '');
   document.getElementById('totalCost').textContent = allKnown ? formatCost(totalCost) : `${formatCost(totalCost)} + unpriced`;
 }
 
