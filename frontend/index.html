@@ -40,6 +40,7 @@
   .status-dot.running { background: var(--green); animation: blink 1.2s ease-in-out infinite; }
   .status-dot.paused  { background: var(--yellow); }
   .status-dot.error   { background: var(--red); }
+  .status-dot.needs_attention { background: var(--red); animation: blink 1.2s ease-in-out infinite; }
   @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.4} }
   header .spacer { flex: 1; }
   .project-strip { min-height: 58px; padding: 10px 22px; display: flex; align-items: center;
@@ -223,6 +224,7 @@
     <span id="statusText">idle</span>
   </div>
   <div class="spacer"></div>
+  <button class="header-btn" onclick="retryFailedTurn()" id="retryBtn" style="display:none">Retry failed turn</button>
   <button class="header-btn" onclick="pauseResume()" id="pauseBtn" style="display:none">Pause</button>
   <button class="header-btn danger" onclick="stopRun()" id="stopBtn" style="display:none">Stop</button>
 </header>
@@ -421,13 +423,13 @@ function handleEvent(ev) {
   // Update status
   if (ev.kind === 'phase') updateStatus('running');
   if (ev.kind === 'done')  { updateStatus('done'); loadRunHistory(); }
-  if (ev.kind === 'error') updateStatus('error');
+  if (ev.kind === 'error') updateStatus(ev.data.recoverable ? 'needs_attention' : 'error');
 
   // Render feed item
   appendFeed(ev);
 
   // Update agent sidebar on turn events
-  if (ev.kind === 'turn_start' || ev.kind === 'turn_end' || ev.kind === 'retry') {
+  if (ev.kind === 'turn_start' || ev.kind === 'turn_end' || ev.kind === 'retry' || ev.kind === 'error') {
     fetchAgentStatus();
   }
 }
@@ -449,11 +451,11 @@ function appendFeed(ev) {
       if (ev.data.roles) summary += ' | ' + Object.entries(ev.data.roles).map(([r,a])=>`${a}=${r}`).join(' ');
       break;
     case 'turn_start':
-      summary = `Speaking… (${ev.data.role || ev.data.phase || ''} ${ev.data.round ? 'round '+ev.data.round : ''} ${ev.data.iteration ? 'iter '+ev.data.iteration : ''})`;
+      summary = `${ev.data.resumed ? 'Resuming' : 'Speaking'} · ${ev.data.turn_id || 'turn'} · attempt ${ev.data.attempt || 1} (${ev.data.role || ev.data.phase || ''} ${ev.data.round ? 'round '+ev.data.round : ''} ${ev.data.iteration ? 'iter '+ev.data.iteration : ''})`;
       break;
     case 'turn_end':
       const u = ev.data.usage || {};
-      summary = `Done (${(u.input_tokens||0).toLocaleString()} in · ${(u.cached_input_tokens||0).toLocaleString()} cached · ${(u.output_tokens||0).toLocaleString()} out)`;
+      summary = `${ev.data.turn_id || 'Turn'} completed · attempt ${ev.data.attempt || 1} (${(u.input_tokens||0).toLocaleString()} in · ${(u.cached_input_tokens||0).toLocaleString()} cached · ${(u.output_tokens||0).toLocaleString()} out)`;
       detail = ev.data.response || '';
       break;
     case 'vote':
@@ -473,7 +475,7 @@ function appendFeed(ev) {
       summary = `Steering injected: "${ev.data.message}"`;
       break;
     case 'retry':
-      summary = `Usage limit reached · retry ${ev.data.attempt} in ${formatDuration(ev.data.retry_in_seconds)}`;
+      summary = `${ev.data.turn_id || 'Turn'} waiting · attempt ${ev.data.attempt} · retry in ${formatDuration(ev.data.retry_in_seconds)}`;
       detail = ev.data.reason || '';
       break;
     case 'done':
@@ -481,7 +483,10 @@ function appendFeed(ev) {
       updateStatus('done');
       break;
     case 'error':
-      summary = `Error: ${ev.data.error}`;
+      summary = ev.data.recoverable
+        ? `${ev.data.turn_id} failed on attempt ${ev.data.attempt} · fix ${ev.agent} and retry this turn`
+        : `Error: ${ev.data.error}`;
+      detail = ev.data.error || ev.data.message || '';
       break;
     default:
       summary = JSON.stringify(ev.data).slice(0, 100);
@@ -574,6 +579,15 @@ async function pauseResume() {
   }
 }
 
+async function retryFailedTurn() {
+  const response = await fetch('/run/retry', {method:'POST'});
+  const data = await response.json();
+  if (!response.ok) { notify(data.detail || 'Could not retry the failed turn', true); return; }
+  paused = false;
+  updateStatus('running');
+  notify('Retrying the same failed turn');
+}
+
 async function stopRun() {
   if (!confirm('Stop the current run?')) return;
   await fetch('/run/stop', {method:'POST'});
@@ -597,15 +611,18 @@ function updateStatus(s) {
   const txt = document.getElementById('statusText');
   const pauseBtn = document.getElementById('pauseBtn');
   const stopBtn = document.getElementById('stopBtn');
+  const retryBtn = document.getElementById('retryBtn');
   dot.className = `status-dot ${s}`;
   txt.textContent = s;
-  const running = s === 'running' || s === 'paused';
-  pauseBtn.style.display = running ? '' : 'none';
+  const running = s === 'running' || s === 'paused' || s === 'needs_attention';
+  retryBtn.style.display = s === 'needs_attention' ? '' : 'none';
+  pauseBtn.style.display = (s === 'running' || s === 'paused') ? '' : 'none';
   stopBtn.style.display  = running ? '' : 'none';
 }
 
 async function fetchAgentStatus() {
   const res = await fetch('/run/status').then(r=>r.json());
+  if (res.status === 'needs_attention' && appStatus !== 'needs_attention') updateStatus('needs_attention');
   let visibleAgents = res.agents || [];
   if (!visibleAgents.length) {
     const configured = await fetch('/agents').then(r=>r.json());
@@ -619,7 +636,11 @@ async function fetchAgentStatus() {
     const statusColor = {thinking:'var(--yellow)',waiting:'var(--yellow)',done:'var(--green)',error:'var(--red)',idle:'var(--muted)'}[a.status] || 'var(--muted)';
     const cost = a.pricing_known ? formatCost(a.cost_usd || 0) : 'cost n/a';
     const pct = Math.max(0, Math.min(100, ((a.total_tokens||0) / maxTokens) * 100));
-    const retry = a.status === 'waiting' && a.retry_at ? `<div class="usage-detail" style="color:var(--yellow)">retry scheduled ${new Date(a.retry_at).toLocaleTimeString()}</div>` : '';
+    const retry = a.status === 'waiting' && a.retry_at
+      ? `<div class="usage-detail" style="color:var(--yellow)">retry scheduled ${new Date(a.retry_at).toLocaleTimeString()}</div>`
+      : a.status === 'error'
+        ? `<div class="usage-detail" style="color:var(--red)">${escHtml(a.error_message || 'Turn failed')}</div>`
+        : '';
     return `<div class="agent-chip" style="display:block">
       <div style="display:flex;align-items:center;gap:8px">
       <div class="agent-dot" style="background:${color}"></div>
@@ -837,18 +858,34 @@ function removeAgent(i) {
 
 async function saveAgents() {
   if (!projectOpen) { notify('Open a project before saving agents', true); return; }
-  // Clear existing, re-add all
   const existing = await fetch('/agents').then(r=>r.json());
-  await Promise.all((existing.agents||[]).map(a => fetch(`/agents/${a.id}`, {method:'DELETE'})));
-  await Promise.all(agentConfigs.map(cfg =>
-    fetch('/agents', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(cfg)})
-  ));
+  const existingIds = new Set((existing.agents || []).map(a => a.id));
+  const desiredIds = new Set(agentConfigs.filter(c => existingIds.has(c.id)).map(c => c.id));
+
+  for (const cfg of agentConfigs) {
+    const isExisting = existingIds.has(cfg.id);
+    const response = await fetch(isExisting ? `/agents/${cfg.id}` : '/agents', {
+      method: isExisting ? 'PUT' : 'POST',
+      headers: {'Content-Type':'application/json'}, body: JSON.stringify(cfg),
+    });
+    const data = await response.json();
+    if (!response.ok) { notify(data.detail || `Could not save ${cfg.name}`, true); return; }
+  }
+  for (const old of (existing.agents || [])) {
+    if (!desiredIds.has(old.id)) {
+      const response = await fetch(`/agents/${old.id}`, {method:'DELETE'});
+      const data = await response.json();
+      if (!response.ok) { notify(data.detail || `Could not remove ${old.name}`, true); return; }
+    }
+  }
   const updated = await fetch('/agents').then(r=>r.json());
   agentConfigs = updated.agents || [];
   // Assign colors
   agentConfigs.forEach(a => { if(!agentColors[a.name]) agentColors[a.name] = COLORS[colorIdx++ % COLORS.length]; });
   fetchAgentStatus();
-  notify('Agent team saved to this project');
+  notify(appStatus === 'needs_attention'
+    ? 'Agent fix saved · retry the failed turn when ready'
+    : 'Agent team saved to this project');
   renderAgentCards();
 }
 

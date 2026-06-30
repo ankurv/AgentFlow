@@ -60,6 +60,13 @@ class ImmediateRetryOrchestrator(Orchestrator):
         return 0
 
 
+class RepairableFake(StatefulFake):
+    def _raw_send(self, messages, system):
+        if self.config.model != "fixed":
+            raise RuntimeError("invalid model configuration")
+        return super()._raw_send(messages, system)
+
+
 class SessionTests(unittest.TestCase):
     def test_stateful_agent_sends_only_new_turn_and_tracks_cost(self):
         agent = StatefulFake(
@@ -213,6 +220,42 @@ PASS
         self.assertEqual(agent.attempts, 2)
         self.assertEqual(retry_events[0].kind.value, "retry")
 
+    def test_failed_turn_can_be_fixed_and_resumed_without_advancing(self):
+        events = []
+        agent = RepairableFake(
+            AgentConfig(id="agent-1", name="repair", kind="openai", model="broken"),
+            replies=["recovered"],
+        )
+        orchestrator = Orchestrator(
+            [agent], Workspace(tempfile.mkdtemp()), event_cb=events.append,
+        )
+        orchestrator._running = True
+
+        async def exercise():
+            task = asyncio.create_task(orchestrator._send_agent(
+                agent, "same turn", "turn-0001", {"phase": "debate", "round": 1},
+            ))
+            while not orchestrator.failed_turn:
+                await asyncio.sleep(0)
+            self.assertEqual(orchestrator.failed_turn["turn_id"], "turn-0001")
+            agent.reconfigure(AgentConfig(
+                id="agent-1", name="repair", kind="openai", model="fixed",
+            ))
+            orchestrator.retry_failed_turn()
+            return await task
+
+        self.assertEqual(asyncio.run(exercise()), "recovered")
+        self.assertEqual(len(agent.history), 2)
+        self.assertEqual(orchestrator._turn_attempts["turn-0001"], 2)
+        self.assertTrue(any(
+            event.kind.value == "error" and event.data.get("recoverable")
+            for event in events
+        ))
+        self.assertTrue(any(
+            event.kind.value == "turn_start" and event.data.get("resumed")
+            for event in events
+        ))
+
     def test_workspace_writes_into_project_and_reads_agentflow_brief(self):
         with tempfile.TemporaryDirectory() as directory:
             workspace = Workspace(directory)
@@ -249,6 +292,36 @@ PASS
             self.assertEqual(loaded[0]["api_key"], "")
             self.assertEqual(runs[0]["total_tokens"], 42)
             self.assertEqual(runs[0]["status"], "done")
+            store.close()
+
+    def test_sqlite_tracks_turn_attempt_lifecycle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Workspace(directory)
+            workspace.ensure()
+            store = ProjectStore(workspace.root)
+            store.start_run("run-1", "Build it")
+            store.append_event("run-1", {
+                "timestamp": "t1", "kind": "turn_start", "agent": "Builder",
+                "data": {"turn_id": "turn-0001", "attempt": 1, "phase": "debate", "round": 1},
+            })
+            store.append_event("run-1", {
+                "timestamp": "t2", "kind": "error", "agent": "Builder",
+                "data": {"turn_id": "turn-0001", "attempt": 1,
+                         "recoverable": True, "error": "bad config"},
+            })
+            store.append_event("run-1", {
+                "timestamp": "t3", "kind": "turn_start", "agent": "Builder",
+                "data": {"turn_id": "turn-0001", "attempt": 2, "phase": "debate", "round": 1},
+            })
+            store.append_event("run-1", {
+                "timestamp": "t4", "kind": "turn_end", "agent": "Builder",
+                "data": {"turn_id": "turn-0001", "attempt": 2,
+                         "usage": {"total_tokens": 12}, "response": "done"},
+            })
+            turns = store.run_turns("run-1")
+            self.assertEqual(turns[0]["status"], "completed")
+            self.assertEqual(turns[0]["attempt"], 2)
+            self.assertEqual(turns[0]["usage"]["total_tokens"], 12)
             store.close()
 
 

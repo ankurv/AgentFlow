@@ -46,6 +46,24 @@ class ProjectStore:
                     data_json TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS idx_events_run ON events(run_id, id);
+                CREATE TABLE IF NOT EXISTS turns (
+                    run_id TEXT NOT NULL,
+                    turn_id TEXT NOT NULL,
+                    agent TEXT NOT NULL,
+                    phase TEXT NOT NULL DEFAULT '',
+                    role TEXT NOT NULL DEFAULT '',
+                    round_number INTEGER,
+                    iteration INTEGER,
+                    status TEXT NOT NULL,
+                    attempt INTEGER NOT NULL DEFAULT 1,
+                    started_at TEXT NOT NULL,
+                    completed_at TEXT,
+                    error TEXT NOT NULL DEFAULT '',
+                    usage_json TEXT NOT NULL DEFAULT '{}',
+                    response_preview TEXT NOT NULL DEFAULT '',
+                    PRIMARY KEY (run_id, turn_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_turns_run ON turns(run_id, turn_id);
                 """
             )
 
@@ -108,6 +126,69 @@ class ProjectStore:
                     json.dumps(event.get("data", {})),
                 ),
             )
+            self._record_turn(run_id, event)
+
+    def _record_turn(self, run_id: str | None, event: dict):
+        data = event.get("data", {})
+        turn_id = data.get("turn_id")
+        if not run_id or not turn_id:
+            return
+        kind = event.get("kind", "")
+        timestamp = event.get("timestamp", "")
+        if kind == "turn_start":
+            self._db.execute(
+                """INSERT INTO turns(
+                       run_id, turn_id, agent, phase, role, round_number, iteration,
+                       status, attempt, started_at, completed_at, error
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, NULL, '')
+                   ON CONFLICT(run_id, turn_id) DO UPDATE SET
+                       agent=excluded.agent, phase=excluded.phase, role=excluded.role,
+                       round_number=excluded.round_number, iteration=excluded.iteration,
+                       status='running', attempt=excluded.attempt, completed_at=NULL, error=''""",
+                (
+                    run_id, turn_id, event.get("agent", ""), data.get("phase", ""),
+                    data.get("role", ""), data.get("round"), data.get("iteration"),
+                    int(data.get("attempt", 1) or 1), timestamp,
+                ),
+            )
+        elif kind == "retry":
+            self._db.execute(
+                "UPDATE turns SET status='waiting', attempt=? WHERE run_id=? AND turn_id=?",
+                (int(data.get("attempt", 1) or 1), run_id, turn_id),
+            )
+        elif kind == "error" and data.get("recoverable"):
+            self._db.execute(
+                """UPDATE turns SET status='failed', attempt=?, error=?
+                   WHERE run_id=? AND turn_id=?""",
+                (int(data.get("attempt", 1) or 1), data.get("error", ""), run_id, turn_id),
+            )
+        elif kind == "turn_end":
+            self._db.execute(
+                """UPDATE turns SET status='completed', attempt=?, completed_at=?,
+                       error='', usage_json=?, response_preview=?
+                   WHERE run_id=? AND turn_id=?""",
+                (
+                    int(data.get("attempt", 1) or 1), timestamp,
+                    json.dumps(data.get("usage", {})), data.get("response", "")[:500],
+                    run_id, turn_id,
+                ),
+            )
+
+    def run_turns(self, run_id: str) -> list[dict]:
+        with self._lock:
+            rows = self._db.execute(
+                """SELECT turn_id, agent, phase, role, round_number, iteration,
+                          status, attempt, started_at, completed_at, error,
+                          usage_json, response_preview
+                   FROM turns WHERE run_id=? ORDER BY turn_id""",
+                (run_id,),
+            ).fetchall()
+        result = []
+        for row in rows:
+            item = dict(row)
+            item["usage"] = json.loads(item.pop("usage_json"))
+            result.append(item)
+        return result
 
     def recent_runs(self, limit: int = 10) -> list[dict]:
         with self._lock:

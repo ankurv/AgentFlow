@@ -16,10 +16,19 @@ from .base import AgentBase, AgentConfig, Usage
 class ClaudeAgent(AgentBase):
     def __init__(self, config: AgentConfig):
         super().__init__(config)
+        self._configure_client()
+
+    def _configure_client(self):
         import anthropic
 
-        key = config.api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+        key = self.config.api_key or os.environ.get("ANTHROPIC_API_KEY", "")
         self._client = anthropic.Anthropic(api_key=key) if key else anthropic.Anthropic()
+
+    def reconfigure(self, config: AgentConfig):
+        previous_key = self.config.api_key
+        super().reconfigure(config)
+        if config.api_key != previous_key:
+            self._configure_client()
 
     def _raw_send(self, messages: list[dict], system: str) -> tuple[str, Usage]:
         # Claude's Messages API is stateless, so AgentBase supplies a bounded
@@ -53,11 +62,20 @@ class OpenAIAgent(AgentBase):
 
     def __init__(self, config: AgentConfig):
         super().__init__(config)
+        self._configure_client()
+        self._response_id: str | None = None
+
+    def _configure_client(self):
         import openai
 
-        key = config.api_key or os.environ.get("OPENAI_API_KEY", "")
+        key = self.config.api_key or os.environ.get("OPENAI_API_KEY", "")
         self._client = openai.OpenAI(api_key=key) if key else openai.OpenAI()
-        self._response_id: str | None = None
+
+    def reconfigure(self, config: AgentConfig):
+        previous_key = self.config.api_key
+        super().reconfigure(config)
+        if config.api_key != previous_key:
+            self._configure_client()
 
     def _raw_send(self, messages: list[dict], system: str) -> tuple[str, Usage]:
         kwargs = {
@@ -100,14 +118,27 @@ class GeminiAgent(AgentBase):
 
     def __init__(self, config: AgentConfig):
         super().__init__(config)
+        self._configure_provider()
+        self._chat = None
+
+    def _configure_provider(self):
         import google.generativeai as genai
 
-        key = config.api_key or os.environ.get("GEMINI_API_KEY", "")
+        key = self.config.api_key or os.environ.get("GEMINI_API_KEY", "")
         if key:
             genai.configure(api_key=key)
         self._genai = genai
-        self._model_name = config.model or "gemini-2.5-flash"
-        self._chat = None
+        self._model_name = self.config.model or "gemini-2.5-flash"
+
+    def reconfigure(self, config: AgentConfig):
+        previous_key = self.config.api_key
+        previous_model = self.config.model
+        super().reconfigure(config)
+        if config.api_key != previous_key:
+            self._configure_provider()
+        if config.model != previous_model:
+            self._model_name = config.model or "gemini-2.5-flash"
+            self._chat = None
 
     def _raw_send(self, messages: list[dict], system: str) -> tuple[str, Usage]:
         if self._chat is None:
@@ -137,6 +168,12 @@ class CLIAgent(AgentBase):
 
     def __init__(self, config: AgentConfig):
         super().__init__(config)
+        self._provider_session_id = ""
+        self._session_cwd = tempfile.mkdtemp(prefix=f"agentflow-{self._session_id}-")
+        self._configure_command(config)
+
+    def _configure_command(self, config: AgentConfig):
+        previous_mode = getattr(self, "_session_mode", "")
         self._argv = shlex.split(config.cli_command)
         if not self._argv:
             raise ValueError(f"CLIAgent '{self.name}' has no cli_command configured")
@@ -152,8 +189,17 @@ class CLIAgent(AgentBase):
         else:
             self._session_mode = "stateless"
         self.manages_context = self._session_mode in {"codex", "antigravity"}
-        self._provider_session_id = ""
-        self._session_cwd = tempfile.mkdtemp(prefix=f"agentflow-{self._session_id}-")
+        if previous_mode and previous_mode != self._session_mode:
+            self._provider_session_id = ""
+
+    def reconfigure(self, config: AgentConfig):
+        previous = (self.config, list(self._argv), self._session_mode, self.manages_context)
+        try:
+            super().reconfigure(config)
+            self._configure_command(config)
+        except Exception:
+            self.config, self._argv, self._session_mode, self.manages_context = previous
+            raise
 
     def _raw_send(self, messages: list[dict], system: str) -> tuple[str, Usage]:
         if self._session_mode == "codex":
@@ -284,6 +330,10 @@ class CLIAgent(AgentBase):
 class OllamaAgent(AgentBase):
     def __init__(self, config: AgentConfig):
         super().__init__(config)
+        self._base_url = config.extra.get("base_url", "http://localhost:11434")
+
+    def reconfigure(self, config: AgentConfig):
+        super().reconfigure(config)
         self._base_url = config.extra.get("base_url", "http://localhost:11434")
 
     def _raw_send(self, messages: list[dict], system: str) -> tuple[str, Usage]:

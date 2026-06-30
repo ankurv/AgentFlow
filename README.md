@@ -8,7 +8,7 @@ Multi-agent debate + build loop with a live monitoring UI.
 cd AGENTFLOW
 python3 -m pip install -r requirements.txt
 python3 run.py
-# open http://localhost:8765
+# open http://localhost:8000
 ```
 
 ## Project folders and `AGENTFLOW.md`
@@ -124,6 +124,16 @@ retry time; AgentFlow sleeps until that time and retries the same turn without a
 duplicate conversation history. If no reset time is available, it uses bounded
 exponential backoff. Retry base and maximum wait are configurable per agent, and the
 run can still be stopped while waiting.
+
+Other agent errors create a recoverable checkpoint instead of ending the run. The UI
+shows **needs attention**, the failed logical turn ID, and its attempt number. Fix the
+agent configuration on the Agents tab, save it, then choose **Retry failed turn**.
+AgentFlow retries the same prompt with the same agent session and turn ID, increments
+the attempt number, and avoids adding the failed prompt twice to conversation history.
+
+Turn status is persisted in the project database, including attempts, errors, timing,
+and token usage. It is also available from `GET /runs/{run_id}/turns` for tooling and
+post-run inspection.
 
 ## Human steering
 

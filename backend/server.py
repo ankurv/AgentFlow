@@ -66,6 +66,10 @@ state = AppState()
 
 def broadcast(event: Event):
     data = event.to_dict()
+    if event.kind == EventKind.ERROR and event.data.get("recoverable"):
+        state.status = "needs_attention"
+    elif event.kind == EventKind.TURN_START and event.data.get("resumed"):
+        state.status = "running"
     state.event_log.append(data)
     if state.store:
         state.store.append_event(state.run_id, data)
@@ -159,6 +163,26 @@ class AgentConfigIn(BaseModel):
     extra: dict = Field(default_factory=dict)
 
 
+def to_agent_config(config: dict) -> AgentConfig:
+    return AgentConfig(
+        id=config.get("id", ""), name=config["name"], kind=config["kind"],
+        role=config.get("role", ""), model=config.get("model", ""),
+        api_key=config.get("api_key", ""), cli_command=config.get("cli_command", ""),
+        system_prompt=config.get("system_prompt", ""),
+        max_history_turns=config.get("max_history_turns", 20),
+        extra=config.get("extra", {}),
+    )
+
+
+def live_agent(agent_id: str):
+    if not state.orchestrator or state.status not in {"running", "paused", "needs_attention"}:
+        return None
+    return next(
+        (agent for agent in state.orchestrator.agents if agent.config.id == agent_id),
+        None,
+    )
+
+
 @app.get("/agents")
 def list_agents():
     return {"agents": state.configs, "kinds": list(AGENT_KINDS.keys())}
@@ -166,6 +190,8 @@ def list_agents():
 
 @app.post("/agents")
 def add_agent(body: AgentConfigIn):
+    if state.status in {"running", "paused", "needs_attention"}:
+        raise HTTPException(400, "Stop the active run before adding an agent")
     config = body.model_dump()
     config["id"] = str(uuid.uuid4())[:8]
     state.configs.append(config)
@@ -179,6 +205,16 @@ def update_agent(agent_id: str, body: AgentConfigIn):
         if current["id"] == agent_id:
             updated = body.model_dump()
             updated["id"] = agent_id
+            active = live_agent(agent_id)
+            if active:
+                if updated["kind"] != current["kind"] or updated["name"] != current["name"]:
+                    raise HTTPException(
+                        400, "An active agent's name and kind cannot change; stop the run first"
+                    )
+                try:
+                    active.reconfigure(to_agent_config(updated))
+                except Exception as exc:
+                    raise HTTPException(400, f"Agent configuration is invalid: {exc}") from exc
             state.configs[index] = updated
             state.persist_agents()
             return {"ok": True, "agent": updated}
@@ -187,6 +223,8 @@ def update_agent(agent_id: str, body: AgentConfigIn):
 
 @app.delete("/agents/{agent_id}")
 def delete_agent(agent_id: str):
+    if state.status in {"running", "paused", "needs_attention"}:
+        raise HTTPException(400, "Stop the active run before removing an agent")
     state.configs = [config for config in state.configs if config["id"] != agent_id]
     state.persist_agents()
     return {"ok": True}
@@ -202,7 +240,7 @@ class StartBody(BaseModel):
 
 @app.post("/run/start")
 async def start_run(body: StartBody):
-    if state.status in {"running", "paused"}:
+    if state.status in {"running", "paused", "needs_attention"}:
         raise HTTPException(400, "A run is already in progress")
     if body.project_path:
         requested = str(Path(body.project_path).expanduser().resolve())
@@ -225,23 +263,19 @@ async def start_run(body: StartBody):
     if body.save_brief and body.idea.strip():
         state.workspace.write_brief(body.idea)
 
+    agents = []
+    try:
+        for config in state.configs:
+            agents.append(create_agent(to_agent_config(config)))
+    except Exception as exc:
+        raise HTTPException(400, f"Could not initialize agent team: {exc}") from exc
+
     state.event_log.clear()
     state.run_id = str(uuid.uuid4())[:8]
     state.current_idea = idea
     state.status = "running"
     if state.store:
         state.store.start_run(state.run_id, idea)
-
-    agents = []
-    for config in state.configs:
-        agents.append(create_agent(AgentConfig(
-            name=config["name"], kind=config["kind"], role=config.get("role", ""),
-            model=config.get("model", ""), api_key=config.get("api_key", ""),
-            cli_command=config.get("cli_command", ""),
-            system_prompt=config.get("system_prompt", ""),
-            max_history_turns=config.get("max_history_turns", 20),
-            extra=config.get("extra", {}),
-        )))
 
     state.orchestrator = Orchestrator(
         agents=agents,
@@ -279,6 +313,8 @@ async def start_run(body: StartBody):
 
 @app.post("/run/pause")
 def pause_run():
+    if state.status == "needs_attention":
+        raise HTTPException(409, "Fix the failed agent and retry its turn")
     if state.orchestrator:
         state.orchestrator.pause()
         state.status = "paused"
@@ -287,10 +323,22 @@ def pause_run():
 
 @app.post("/run/resume")
 def resume_run():
+    if state.orchestrator and state.orchestrator.failed_turn:
+        raise HTTPException(409, "Use Retry failed turn after fixing the agent")
     if state.orchestrator:
         state.orchestrator.resume()
         state.status = "running"
     return {"ok": True, "status": state.status}
+
+
+@app.post("/run/retry")
+def retry_failed_turn():
+    if not state.orchestrator or not state.orchestrator.failed_turn:
+        raise HTTPException(400, "There is no failed turn to retry")
+    state.orchestrator.retry_failed_turn()
+    state.status = "running"
+    return {"ok": True, "status": state.status,
+            "turn": state.orchestrator.failed_turn}
 
 
 @app.post("/run/stop")
@@ -328,12 +376,18 @@ def run_status():
         "idea": state.current_idea,
         "project_path": state.workspace.path if state.workspace else "",
         "agents": agents,
+        "failed_turn": state.orchestrator.failed_turn if state.orchestrator else None,
     }
 
 
 @app.get("/runs")
 def recent_runs():
     return {"runs": state.store.recent_runs() if state.store else []}
+
+
+@app.get("/runs/{run_id}/turns")
+def run_turns(run_id: str):
+    return {"turns": state.store.run_turns(run_id) if state.store else []}
 
 
 @app.get("/workspace")

@@ -153,6 +153,10 @@ class Orchestrator:
         self._pause_event.set()  # not paused initially
         self._steer_queue: asyncio.Queue[str] = asyncio.Queue()
         self._running = False
+        self._turn_sequence = 0
+        self._turn_attempts: dict[str, int] = {}
+        self._failed_turn: dict[str, Any] | None = None
+        self._recovery_event = asyncio.Event()
 
     # ── Public controls ───────────────────────────────────────────────────────
 
@@ -171,6 +175,21 @@ class Orchestrator:
 
     def stop(self):
         self._running = False
+        self._pause_event.set()
+        self._recovery_event.set()
+
+    @property
+    def failed_turn(self) -> dict[str, Any] | None:
+        if not self._failed_turn:
+            return None
+        return {key: value for key, value in self._failed_turn.items() if key != "prompt"}
+
+    def retry_failed_turn(self):
+        if not self._failed_turn:
+            raise ValueError("There is no failed turn to retry")
+        self._paused = False
+        self._pause_event.set()
+        self._recovery_event.set()
 
     # ── Main entry ────────────────────────────────────────────────────────────
 
@@ -215,17 +234,18 @@ class Orchestrator:
                     "Add your contributions now."
                 )
 
-                self._emit(Event(EventKind.TURN_START, agent=agent.name,
-                                 data={"round": round_num, "phase": "debate",
-                                       "standing_role": agent.config.role}))
+                turn_context = {"round": round_num, "phase": "debate",
+                                "standing_role": agent.config.role}
+                turn_id = self._begin_turn(agent, turn_context)
 
-                response = await self._send_agent(agent, prompt)
+                response = await self._send_agent(agent, prompt, turn_id, turn_context)
 
                 self._apply_debate_response(agent.name, round_num, response)
                 vote = self.ws.parse_vote(response)
                 votes[agent.name] = vote
 
                 self._emit(Event(EventKind.TURN_END, agent=agent.name, data={
+                    "turn_id": turn_id, "attempt": self._turn_attempts[turn_id],
                     "round": round_num, "response": response,
                     **self._usage_event(agent),
                 }))
@@ -300,16 +320,17 @@ class Orchestrator:
                     f"{BUILD_SYSTEMS[role]}"
                 )
 
-                self._emit(Event(EventKind.TURN_START, agent=agent.name,
-                                 data={"iteration": iteration, "role": role,
-                                       "standing_role": agent.config.role}))
+                turn_context = {"iteration": iteration, "role": role, "phase": "build",
+                                "standing_role": agent.config.role}
+                turn_id = self._begin_turn(agent, turn_context)
 
-                response = await self._send_agent(agent, prompt)
+                response = await self._send_agent(agent, prompt, turn_id, turn_context)
 
                 verdict = self._apply_build_response(agent.name, role, iteration, response)
                 verdicts[role] = verdict
 
                 self._emit(Event(EventKind.TURN_END, agent=agent.name, data={
+                    "turn_id": turn_id, "attempt": self._turn_attempts[turn_id],
                     "iteration": iteration, "role": role,
                     "response": response,
                     **self._usage_event(agent),
@@ -355,6 +376,15 @@ class Orchestrator:
             except Exception:
                 pass
 
+    def _begin_turn(self, agent: AgentBase, context: dict) -> str:
+        self._turn_sequence += 1
+        turn_id = f"turn-{self._turn_sequence:04d}"
+        self._turn_attempts[turn_id] = 1
+        self._emit(Event(EventKind.TURN_START, agent=agent.name, data={
+            "turn_id": turn_id, "attempt": 1, **context,
+        }))
+        return turn_id
+
     @staticmethod
     def _usage_event(agent: AgentBase) -> dict:
         usage = agent.last_usage.to_dict()
@@ -373,25 +403,62 @@ class Orchestrator:
             identity += f"\n\nBehavior instructions:\n{agent.config.system_prompt}"
         return identity
 
-    async def _send_agent(self, agent: AgentBase, prompt: str) -> str:
-        attempt = 0
+    async def _send_agent(
+        self,
+        agent: AgentBase,
+        prompt: str,
+        turn_id: str = "turn-manual",
+        turn_context: Optional[dict] = None,
+    ) -> str:
+        attempt = self._turn_attempts.get(turn_id, 1)
+        self._turn_attempts[turn_id] = attempt
+        context = dict(turn_context or {})
         max_retries = int(agent.config.extra.get("rate_limit_max_retries", 0) or 0)
         while self._running:
             try:
-                return await asyncio.to_thread(
+                response = await asyncio.to_thread(
                     agent.send, prompt, self._agent_system(agent)
                 )
+                self._failed_turn = None
+                return response
             except RuntimeError as exc:
                 if not self._is_rate_limit(exc):
-                    raise
-                attempt += 1
-                if max_retries and attempt > max_retries:
+                    agent.mark_error(str(exc))
+                    self._failed_turn = {
+                        "turn_id": turn_id,
+                        "attempt": attempt,
+                        "agent_id": agent.config.id,
+                        "agent": agent.name,
+                        "error": str(exc),
+                        "prompt": prompt,
+                        **context,
+                    }
+                    self._recovery_event.clear()
+                    self._paused = True
+                    self._pause_event.clear()
+                    self._emit(Event(EventKind.ERROR, agent=agent.name, data={
+                        **self.failed_turn,
+                        "recoverable": True,
+                        "message": "Fix this agent's configuration, save it, then retry the failed turn.",
+                    }))
+                    await self._recovery_event.wait()
+                    if not self._running:
+                        raise asyncio.CancelledError()
+                    attempt += 1
+                    self._turn_attempts[turn_id] = attempt
+                    agent.error_message = ""
+                    self._emit(Event(EventKind.TURN_START, agent=agent.name, data={
+                        "turn_id": turn_id, "attempt": attempt, "resumed": True,
+                        "retry_reason": "manual_recovery", **context,
+                    }))
+                    continue
+                if max_retries and attempt >= max_retries + 1:
                     raise
                 delay = self._retry_delay(exc, attempt, agent)
                 retry_at = datetime.now(timezone.utc) + timedelta(seconds=delay)
                 agent.mark_waiting(retry_at.isoformat(), str(exc))
                 self._emit(Event(EventKind.RETRY, agent=agent.name, data={
-                    "attempt": attempt,
+                    "turn_id": turn_id, "attempt": attempt,
                     "retry_in_seconds": delay,
                     "retry_at": retry_at.isoformat(),
                     "reason": str(exc),
@@ -401,6 +468,13 @@ class Orchestrator:
                     step = min(5, remaining)
                     await asyncio.sleep(step)
                     remaining -= step
+                if self._running:
+                    attempt += 1
+                    self._turn_attempts[turn_id] = attempt
+                    self._emit(Event(EventKind.TURN_START, agent=agent.name, data={
+                        "turn_id": turn_id, "attempt": attempt, "resumed": True,
+                        "retry_reason": "usage_limit", **context,
+                    }))
         raise asyncio.CancelledError()
 
     @staticmethod

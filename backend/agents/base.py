@@ -57,6 +57,7 @@ class Message:
 class AgentConfig:
     name: str
     kind: str
+    id: str = ""
     role: str = ""
     model: str = ""
     api_key: str = ""
@@ -101,6 +102,7 @@ class AgentBase(ABC):
         self.last_usage = Usage()
         self.retry_at = ""
         self.retry_reason = ""
+        self.error_message = ""
         self._session_id = hashlib.md5(
             f"{config.name}{datetime.now(timezone.utc).isoformat()}".encode()
         ).hexdigest()[:8]
@@ -181,12 +183,24 @@ class AgentBase(ABC):
         self.status = AgentStatus.DONE
         self.retry_at = ""
         self.retry_reason = ""
+        self.error_message = ""
         return reply
 
     def mark_waiting(self, retry_at: str, reason: str):
         self.status = AgentStatus.WAITING
         self.retry_at = retry_at
         self.retry_reason = reason
+
+    def mark_error(self, reason: str):
+        self.status = AgentStatus.ERROR
+        self.error_message = reason
+        self.retry_at = ""
+        self.retry_reason = ""
+
+    def reconfigure(self, config: AgentConfig):
+        """Apply a repaired configuration without discarding logical history."""
+        self.config = config
+        self.error_message = ""
 
     def reset(self):
         self.history.clear()
@@ -197,6 +211,7 @@ class AgentBase(ABC):
         self.last_usage = Usage()
         self.retry_at = ""
         self.retry_reason = ""
+        self.error_message = ""
         self.status = AgentStatus.IDLE
         self._reset_provider_session()
 
@@ -223,6 +238,7 @@ class AgentBase(ABC):
 
     def state_dict(self) -> dict:
         return {
+            "id": self.config.id,
             "name": self.name,
             "kind": self.config.kind,
             "role": self.config.role,
@@ -233,6 +249,7 @@ class AgentBase(ABC):
             "provider_session": self.provider_session_id(),
             "retry_at": self.retry_at,
             "retry_reason": self.retry_reason,
+            "error_message": self.error_message,
             **self.usage_dict(),
         }
 
