@@ -224,6 +224,7 @@ PASS
                 workspace=Workspace(directory),
                 max_debate_rounds=1,
                 max_build_iterations=1,
+                require_approval=False,
             )
             asyncio.run(orchestrator.run("build a tiny app"))
 
@@ -239,7 +240,7 @@ PASS
             ),
             replies=["ok"],
         )
-        orchestrator = Orchestrator([agent], Workspace(tempfile.mkdtemp()))
+        orchestrator = Orchestrator([agent], Workspace(tempfile.mkdtemp()), require_approval=False)
         orchestrator._running = True
         asyncio.run(orchestrator._send_agent(agent, "Review this"))
         self.assertIn("You are Ada", agent.received_systems[0])
@@ -253,7 +254,8 @@ PASS
             reply="recovered",
         )
         orchestrator = ImmediateRetryOrchestrator(
-            [agent], Workspace(tempfile.mkdtemp()), event_cb=lambda event: retry_events.append(event)
+            [agent], Workspace(tempfile.mkdtemp()), event_cb=lambda event: retry_events.append(event),
+            require_approval=False,
         )
         orchestrator._running = True
         reply = asyncio.run(orchestrator._send_agent(agent, "try"))
@@ -269,6 +271,7 @@ PASS
         )
         orchestrator = Orchestrator(
             [agent], Workspace(tempfile.mkdtemp()), event_cb=events.append,
+            require_approval=False,
         )
         orchestrator._running = True
 
@@ -364,6 +367,147 @@ PASS
             self.assertEqual(turns[0]["attempt"], 2)
             self.assertEqual(turns[0]["usage"]["total_tokens"], 12)
             store.close()
+
+    def test_human_approval_gate_and_loop_continuation(self):
+        debate = """## DESIGN_APPEND
+design
+## PLAN_UPDATE
+- [ ] build
+## CONSENSUS_APPEND
+ready
+VOTE: AGREE
+"""
+        developer = """## FILE: src/app.py
+print('ok')
+## PLAN_UPDATE
+- [x] build
+"""
+        reviewer = """## DESIGN_APPEND
+reviewed
+## VERDICT
+APPROVE
+"""
+        tester = """## TEST_RESULTS_APPEND
+passed
+## PLAN_UPDATE
+- [x] tested
+## VERDICT
+PASS
+"""
+        agent = StatefulFake(
+            AgentConfig(name="solo", kind="openai", model="gpt-4o"),
+            replies=[debate, debate, developer, reviewer, tester],
+        )
+
+        events = []
+        with tempfile.TemporaryDirectory() as directory:
+            orchestrator = Orchestrator(
+                agents=[agent],
+                workspace=Workspace(directory),
+                max_debate_rounds=1,
+                max_build_iterations=1,
+                require_approval=True,
+                event_cb=events.append,
+            )
+
+            async def exercise():
+                run_task = asyncio.create_task(orchestrator.run("build a tiny app"))
+                while not any(ev.kind.value == "phase" and ev.data.get("status") == "waiting_for_approval" for ev in events):
+                    await asyncio.sleep(0.005)
+
+                self.assertTrue(orchestrator._paused)
+                self.assertEqual(len(agent.received), 1)
+
+                await orchestrator.steer("change something")
+                orchestrator.require_approval = False
+                orchestrator.resume()
+                await run_task
+
+            asyncio.run(exercise())
+            self.assertEqual(len(agent.received), 5)
+            self.assertIn("change something", agent.received[1][0]["content"])
+
+    def test_programmatic_loop_pauses(self):
+        debate = """## DESIGN_APPEND
+design
+## PLAN_UPDATE
+- [ ] build
+## CONSENSUS_APPEND
+not ready yet
+VOTE: DISAGREE
+"""
+        developer = """## FILE: src/app.py
+print('ok')
+## PLAN_UPDATE
+- [x] build
+"""
+        reviewer_fail = """## DESIGN_APPEND
+reviewed
+## VERDICT
+CHANGES NEEDED
+"""
+        reviewer = """## DESIGN_APPEND
+reviewed
+## VERDICT
+APPROVE
+"""
+        tester = """## TEST_RESULTS_APPEND
+passed
+## PLAN_UPDATE
+- [x] tested
+## VERDICT
+PASS
+"""
+        agent = StatefulFake(
+            AgentConfig(name="solo", kind="openai", model="gpt-4o"),
+            replies=[
+                debate, debate, debate.replace("DISAGREE", "AGREE"),
+                developer, reviewer_fail, tester,
+                developer, reviewer, tester
+            ],
+        )
+
+        events = []
+        with tempfile.TemporaryDirectory() as directory:
+            orchestrator = Orchestrator(
+                agents=[agent],
+                workspace=Workspace(directory),
+                max_debate_rounds=3,
+                max_build_iterations=2,
+                require_approval=True,
+                event_cb=events.append,
+            )
+
+            async def exercise():
+                run_task = asyncio.create_task(orchestrator.run("build a tiny app"))
+                
+                # Debate should pause at waiting_for_continuation after round 2
+                while not any(ev.kind.value == "phase" and ev.data.get("round") == 2 and ev.data.get("status") == "waiting_for_continuation" for ev in events):
+                    await asyncio.sleep(0.005)
+
+                self.assertTrue(orchestrator._paused)
+
+                # Resume. It will complete round 3 (agree) and hit waiting_for_approval
+                orchestrator.resume()
+                while not any(ev.kind.value == "phase" and ev.data.get("status") == "waiting_for_approval" for ev in events):
+                    await asyncio.sleep(0.005)
+
+                self.assertTrue(orchestrator._paused)
+
+                # Resume. It will run build iteration 1, fail review, and hit waiting_for_continuation
+                orchestrator.resume()
+                while not any(ev.kind.value == "phase" and ev.data.get("iteration") == 1 and ev.data.get("status") == "waiting_for_continuation" for ev in events):
+                    await asyncio.sleep(0.005)
+
+                self.assertTrue(orchestrator._paused)
+
+                # Disable require_approval and resume. It will run iteration 2 (pass review/test) and complete
+                orchestrator.require_approval = False
+                orchestrator.resume()
+                await run_task
+
+            asyncio.run(exercise())
+            self.assertEqual(len(agent.received), 9)
 
 
 if __name__ == "__main__":

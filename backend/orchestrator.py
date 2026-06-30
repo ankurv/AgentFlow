@@ -140,12 +140,14 @@ class Orchestrator:
         event_cb: Optional[Callable[[Event], Any]] = None,
         max_debate_rounds: int = 6,
         max_build_iterations: int = 5,
+        require_approval: bool = True,
     ):
         self.agents = agents
         self.ws = workspace
         self._cb = event_cb
         self.max_debate_rounds = max_debate_rounds
         self.max_build_iterations = max_build_iterations
+        self.require_approval = require_approval
 
         # Steering controls
         self._paused = False
@@ -199,13 +201,28 @@ class Orchestrator:
         self.ws.init(idea)
         n = len(self.agents)
 
-        # The first useful turn carries the seed. This avoids one full model
-        # generation per agent whose only purpose used to be "wait".
-        await self._debate_phase(n)
-        if not self._running:
-            return
+        while self._running:
+            # The first useful turn carries the seed. This avoids one full model
+            # generation per agent whose only purpose used to be "wait".
+            await self._debate_phase(n)
+            if not self._running:
+                return
 
-        await self._build_phase()
+            if self.require_approval:
+                self.pause()
+                self._emit(Event(EventKind.PHASE, data={"phase": "debate", "status": "waiting_for_approval"}))
+                await self._wait_if_paused()
+                if not self._running:
+                    return
+
+                if not self._steer_queue.empty():
+                    self._emit(Event(EventKind.PHASE, data={"phase": "debate", "status": "continuing_debate"}))
+                    continue
+
+            break
+
+        if self._running:
+            await self._build_phase()
         return self.ws.snapshot()
 
     # ── Debate phase ──────────────────────────────────────────────────────────
@@ -219,12 +236,21 @@ class Orchestrator:
                 return
 
             votes: dict[str, str] = {}
-            steering = await self._drain_steer()
+            steering_accumulated = ""
 
             for agent in self.agents:
                 await self._wait_if_paused()
+                if not self._running:
+                    return
+                new_steering = await self._drain_steer()
+                if new_steering:
+                    if steering_accumulated:
+                        steering_accumulated += "\n" + new_steering
+                    else:
+                        steering_accumulated = new_steering
+
                 delta = self.ws.changed_context(agent.name)
-                steer_block = f"\n\n[HUMAN STEERING]\n{steering}" if steering else ""
+                steer_block = f"\n\n[HUMAN STEERING]\n{steering_accumulated}" if steering_accumulated else ""
                 seed_block = f"\n\nProduct idea: {self.idea}" if round_num == 1 else ""
                 prompt = (
                     f"{DEBATE_SYSTEM.format(n=len(self.agents))}"
@@ -263,6 +289,16 @@ class Orchestrator:
                 "phase": "debate", "round": round_num,
                 "status": f"no consensus — {disagree} disagree"
             }))
+
+            if self.require_approval and round_num % 2 == 0 and round_num < self.max_debate_rounds:
+                self.pause()
+                self._emit(Event(EventKind.PHASE, data={
+                    "phase": "debate", "round": round_num,
+                    "status": "waiting_for_continuation"
+                }))
+                await self._wait_if_paused()
+                if not self._running:
+                    return
 
         # Max rounds: proceed anyway
         self._emit(Event(EventKind.CONSENSUS, data={"forced": True, "votes": {}}))
@@ -307,12 +343,21 @@ class Orchestrator:
             }))
 
             verdicts: dict[str, str] = {}
-            steering = await self._drain_steer()
+            steering_accumulated = ""
 
             for role, agent in roles.items():
                 await self._wait_if_paused()
+                if not self._running:
+                    return
+                new_steering = await self._drain_steer()
+                if new_steering:
+                    if steering_accumulated:
+                        steering_accumulated += "\n" + new_steering
+                    else:
+                        steering_accumulated = new_steering
+
                 delta = self.ws.changed_context(agent.name, ROLE_NEEDS[role])
-                steer_block = f"\n\n[HUMAN STEERING]\n{steering}" if steering else ""
+                steer_block = f"\n\n[HUMAN STEERING]\n{steering_accumulated}" if steering_accumulated else ""
                 prompt = (
                     "Debate is complete; continue in the BUILD phase.\n"
                     f"Build iteration {iteration}. Your role: {role.upper()}.\n\n"
@@ -343,6 +388,16 @@ class Orchestrator:
                     "phase": "build", "status": "complete", "iteration": iteration
                 }))
                 return
+
+            if self.require_approval and iteration < self.max_build_iterations:
+                self.pause()
+                self._emit(Event(EventKind.PHASE, data={
+                    "phase": "build", "iteration": iteration,
+                    "status": "waiting_for_continuation"
+                }))
+                await self._wait_if_paused()
+                if not self._running:
+                    return
 
         self._emit(Event(EventKind.PHASE, data={"phase": "build", "status": "max_iterations"}))
 

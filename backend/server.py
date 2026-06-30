@@ -70,6 +70,10 @@ def broadcast(event: Event):
         state.status = "needs_attention"
     elif event.kind == EventKind.TURN_START and event.data.get("resumed"):
         state.status = "running"
+    elif event.kind == EventKind.PHASE and event.data.get("status") in {"waiting_for_approval", "waiting_for_continuation"}:
+        state.status = "paused"
+    elif event.kind == EventKind.PHASE and event.data.get("status") == "continuing_debate":
+        state.status = "running"
     state.event_log.append(data)
     if state.store:
         state.store.append_event(state.run_id, data)
@@ -284,6 +288,7 @@ async def start_run(body: StartBody):
         event_cb=broadcast,
         max_debate_rounds=body.max_debate_rounds,
         max_build_iterations=body.max_build_iterations,
+        require_approval=True,
     )
 
     async def run_and_update():
