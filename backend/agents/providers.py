@@ -200,7 +200,12 @@ class CLIAgent(AgentBase):
             self._session_mode = requested
         elif "codex" in command or re.search(r"\bcodex\s+exec\b", joined):
             self._session_mode = "codex"
-        elif command in {"agy", "antigravity"} or "antigravity" in command:
+        elif (
+            command in {"agy", "antigravity"}
+            or "antigravity" in command
+            or "antigravity" in joined
+            or re.search(r"\bagy\b", joined)
+        ):
             self._session_mode = "antigravity"
         else:
             self._session_mode = "stateless"
@@ -234,6 +239,7 @@ class CLIAgent(AgentBase):
     def _run(self, argv: list[str], cwd: str | None = None) -> subprocess.CompletedProcess:
         result = subprocess.run(
             argv,
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             timeout=int(self.config.extra.get("timeout", 300)),
@@ -328,7 +334,7 @@ class CLIAgent(AgentBase):
             log_text = ""
         combined = f"{result.stdout}\n{result.stderr}\n{log_text}"
         match = re.search(
-            r"(?:conversation|session)(?:_?id)?\s*(?:=|:)\s*[\"']?"
+            r"(?:conversation|session)(?:\s*|_?)(?:id)?\s*(?:=|:|\s)\s*[\"']?"
             r"([0-9a-f]{8}-[0-9a-f-]{27,})",
             combined,
             re.IGNORECASE,
