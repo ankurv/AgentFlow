@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgentFlow</title>
+<style>
+  :root {
+    --bg:       #090b10;
+    --bg2:      #11141b;
+    --bg3:      #181c25;
+    --border:   #222733;
+    --border2:  #313848;
+    --text:     #e2e8f0;
+    --muted:    #64748b;
+    --accent:   #6366f1;
+    --accent2:  #818cf8;
+    --green:    #22c55e;
+    --yellow:   #eab308;
+    --red:      #ef4444;
+    --teal:     #14b8a6;
+    --orange:   #f97316;
+    --radius:   10px;
+    --font:     'Inter', system-ui, sans-serif;
+    --mono:     'JetBrains Mono', 'Fira Code', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font);
+         font-size: 14px; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+  /* ── Header ── */
+  header { display: flex; align-items: center; gap: 12px; padding: 0 22px;
+           height: 56px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+           background: linear-gradient(180deg, #11141b 0%, #0d1016 100%); }
+  .logo { font-size: 17px; font-weight: 750; letter-spacing: -0.6px; color: #a5b4fc; }
+  .logo span { color: var(--muted); font-weight: 400; }
+  .status-pill { display: flex; align-items: center; gap: 6px; padding: 3px 10px;
+                 border-radius: 20px; font-size: 12px; border: 1px solid var(--border2); }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+  .status-dot.running { background: var(--green); animation: blink 1.2s ease-in-out infinite; }
+  .status-dot.paused  { background: var(--yellow); }
+  .status-dot.error   { background: var(--red); }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.4} }
+  header .spacer { flex: 1; }
+  .project-strip { min-height: 58px; padding: 10px 22px; display: flex; align-items: center;
+                   gap: 10px; border-bottom: 1px solid var(--border); background: var(--bg2); }
+  .project-strip .project-label { font-size: 10px; color: var(--muted); text-transform: uppercase;
+                                  letter-spacing: .08em; white-space: nowrap; }
+  .project-path { flex: 1; max-width: 760px; font-family: var(--mono); }
+  .project-state { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis;
+                   white-space: nowrap; }
+  .project-state.ready { color: var(--green); }
+  .header-btn { background: var(--bg3); border: 1px solid var(--border2); color: var(--text);
+                padding: 5px 12px; border-radius: var(--radius); cursor: pointer; font-size: 12px; }
+  .header-btn:hover { border-color: var(--accent); color: var(--accent2); }
+  .header-btn.danger:hover { border-color: var(--red); color: var(--red); }
+
+  /* ── Tab nav ── */
+  nav { display: flex; gap: 2px; padding: 0 22px; border-bottom: 1px solid var(--border);
+        flex-shrink: 0; background: var(--bg2); }
+  .tab { padding: 10px 16px; font-size: 13px; color: var(--muted); cursor: pointer;
+         border-bottom: 2px solid transparent; transition: all .15s; }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent2); border-bottom-color: var(--accent); }
+
+  /* ── Layout ── */
+  .main { display: flex; flex: 1; overflow: hidden; }
+  .panel { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+  .panel.active { display: flex; }
+
+  /* ── Chat panel ── */
+  .chat-layout { display: flex; flex: 1; overflow: hidden; }
+  .chat-sidebar { width: 340px; border-right: 1px solid var(--border); display: flex;
+                  flex-direction: column; flex-shrink: 0; }
+  .sidebar-section { padding: 12px; border-bottom: 1px solid var(--border); }
+  .sidebar-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+                   color: var(--muted); margin-bottom: 8px; }
+  .agent-chip { display: flex; align-items: center; gap: 8px; padding: 10px 11px;
+                border-radius: var(--radius); margin-bottom: 4px; background: var(--bg3);
+                border: 1px solid var(--border); }
+  .agent-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .agent-chip .aname { font-size: 12px; font-weight: 500; flex: 1; }
+  .agent-chip .akind { font-size: 11px; color: var(--muted); }
+  .agent-chip .astatus { font-size: 11px; }
+  .token-count { font-size: 11px; color: var(--muted); text-align: right; }
+  .usage-detail { font-size: 10px; color: var(--muted); margin-top: 3px; white-space: nowrap; }
+  .usage-track { height: 3px; background: var(--border); border-radius: 3px;
+                 overflow: hidden; margin-top: 6px; }
+  .usage-fill { height: 100%; border-radius: 3px; transition: width .25s ease; }
+
+  .idea-form { padding: 16px; border-bottom: 1px solid var(--border); }
+  .idea-form textarea { width: 100%; background: var(--bg3); border: 1px solid var(--border2);
+                        color: var(--text); border-radius: var(--radius); padding: 10px;
+                        font-family: var(--font); font-size: 13px; resize: none;
+                        min-height: 80px; }
+  .idea-form textarea:focus { outline: none; border-color: var(--accent); }
+  .run-controls { display: flex; gap: 6px; margin-top: 8px; }
+  .btn { padding: 7px 14px; border-radius: var(--radius); border: none; cursor: pointer;
+         font-size: 12px; font-weight: 500; transition: all .15s; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: var(--accent2); }
+  .btn-secondary { background: var(--bg3); color: var(--text); border: 1px solid var(--border2); }
+  .btn-secondary:hover { border-color: var(--accent); }
+  .btn-danger { background: transparent; color: var(--red); border: 1px solid var(--border2); }
+  .btn-danger:hover { border-color: var(--red); }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+
+  /* ── Feed ── */
+  .feed-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .feed { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+  .feed-item { border-radius: var(--radius); padding: 10px 12px;
+               border: 1px solid var(--border); background: var(--bg2); }
+  .feed-item.phase  { border-color: var(--accent); background: rgba(99,102,241,.08); }
+  .feed-item.vote   { border-color: var(--teal); background: rgba(20,184,166,.06); }
+  .feed-item.verdict { border-color: var(--orange); background: rgba(249,115,22,.06); }
+  .feed-item.consensus { border-color: var(--green); background: rgba(34,197,94,.08); }
+  .feed-item.file_write { border-color: var(--border2); }
+  .feed-item.error  { border-color: var(--red); background: rgba(239,68,68,.08); }
+  .feed-item.steer  { border-color: var(--yellow); background: rgba(234,179,8,.06); }
+  .feed-item.retry  { border-color: var(--yellow); background: rgba(234,179,8,.08); }
+  .feed-row { display: flex; align-items: baseline; gap: 8px; }
+  .feed-agent { font-size: 11px; font-weight: 600; min-width: 90px; }
+  .feed-kind  { font-size: 11px; color: var(--muted); min-width: 80px; }
+  .feed-text  { font-size: 12px; color: var(--text); flex: 1; }
+  .feed-ts    { font-size: 10px; color: var(--muted); flex-shrink: 0; }
+  .feed-detail { font-size: 12px; color: var(--muted); margin-top: 4px;
+                 font-family: var(--mono); white-space: pre-wrap; word-break: break-word;
+                 max-height: 120px; overflow: hidden; cursor: pointer; }
+  .feed-detail.expanded { max-height: none; }
+
+  /* ── Steer bar ── */
+  .steer-bar { display: flex; gap: 8px; padding: 12px 16px;
+               border-top: 1px solid var(--border); background: var(--bg2); }
+  .steer-bar input { flex: 1; background: var(--bg3); border: 1px solid var(--border2);
+                     color: var(--text); border-radius: var(--radius); padding: 8px 12px;
+                     font-size: 13px; }
+  .steer-bar input:focus { outline: none; border-color: var(--accent); }
+  .steer-bar input::placeholder { color: var(--muted); }
+
+  /* ── Workspace panel ── */
+  .ws-layout { display: flex; flex: 1; overflow: hidden; }
+  .ws-sidebar { width: 200px; border-right: 1px solid var(--border); overflow-y: auto;
+                flex-shrink: 0; padding: 12px; }
+  .ws-file-btn { display: block; width: 100%; text-align: left; padding: 7px 10px;
+                 background: transparent; border: 1px solid transparent; border-radius: var(--radius);
+                 color: var(--muted); font-size: 12px; cursor: pointer; margin-bottom: 2px;
+                 font-family: var(--mono); }
+  .ws-file-btn:hover { background: var(--bg3); color: var(--text); }
+  .ws-file-btn.active { background: var(--bg3); color: var(--accent2);
+                        border-color: var(--border2); }
+  .ws-content { flex: 1; overflow-y: auto; padding: 20px; }
+  .ws-content pre { font-family: var(--mono); font-size: 12px; line-height: 1.6;
+                    white-space: pre-wrap; word-break: break-word; color: var(--text); }
+  .ws-refresh { margin-bottom: 12px; }
+
+  /* ── Agents config panel ── */
+  .config-layout { flex: 1; overflow-y: auto; padding: 28px; max-width: 920px; }
+  .config-layout h2 { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+  .agent-cards { display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px; }
+  .agent-card { background: var(--bg2); border: 1px solid var(--border2);
+                border-radius: 12px; padding: 18px; box-shadow: 0 12px 30px rgba(0,0,0,.12); }
+  .agent-card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .agent-card-name { font-weight: 600; flex: 1; }
+  .agent-card-kind { font-size: 11px; color: var(--muted); background: var(--bg3);
+                     padding: 2px 8px; border-radius: 20px; }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .form-group { display: flex; flex-direction: column; gap: 4px; }
+  .form-group.full { grid-column: 1/-1; }
+  label { font-size: 11px; color: var(--muted); }
+  input, select, textarea.form-ctrl {
+    background: var(--bg3); border: 1px solid var(--border2); color: var(--text);
+    border-radius: 6px; padding: 7px 10px; font-size: 13px; font-family: var(--font);
+    width: 100%;
+  }
+  input:focus, select:focus, textarea.form-ctrl:focus { outline: none; border-color: var(--accent); }
+  select option { background: var(--bg3); }
+  .add-agent-btn { display: flex; align-items: center; gap: 8px; padding: 10px 16px;
+                   background: transparent; border: 1px dashed var(--border2); border-radius: var(--radius);
+                   color: var(--muted); cursor: pointer; font-size: 13px; width: 100%; }
+  .add-agent-btn:hover { border-color: var(--accent); color: var(--accent2); }
+
+  /* ── Token bar ── */
+  .token-bar { display: flex; gap: 16px; padding: 8px 20px;
+               border-top: 1px solid var(--border); background: var(--bg2);
+               font-size: 11px; color: var(--muted); flex-shrink: 0; }
+  .token-bar span { color: var(--text); }
+  .muted-note { color: var(--muted); font-size: 12px; line-height: 1.5; margin-top: -8px; margin-bottom: 18px; }
+  .brief-tools { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  .history-layout { flex: 1; overflow-y: auto; padding: 28px; max-width: 980px; }
+  .history-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(260px,1fr)); gap: 12px; margin-top: 18px; }
+  .run-card { border: 1px solid var(--border); background: var(--bg2); border-radius: 12px; padding: 14px; }
+  .run-card-title { font-size: 13px; font-weight: 600; margin-bottom: 7px; white-space: nowrap;
+                    overflow: hidden; text-overflow: ellipsis; }
+  .run-card-meta { color: var(--muted); font-size: 11px; line-height: 1.7; }
+  .empty-state { color: var(--muted); border: 1px dashed var(--border2); border-radius: 12px;
+                 padding: 24px; text-align: center; }
+  .toast { position: fixed; right: 22px; bottom: 48px; z-index: 20; padding: 10px 14px;
+           background: #202634; border: 1px solid var(--border2); border-radius: 9px;
+           box-shadow: 0 12px 36px rgba(0,0,0,.35); font-size: 12px; opacity: 0;
+           transform: translateY(8px); pointer-events: none; transition: .2s; }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.error { border-color: var(--red); }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  .color-claude     { background: #818cf8; }
+  .color-openai     { background: #22c55e; }
+  .color-gemini     { background: #14b8a6; }
+  .color-cli        { background: #f97316; }
+  .color-ollama     { background: #eab308; }
+  .color-default    { background: #64748b; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Agent<span>Flow</span></div>
+  <div class="status-pill">
+    <div class="status-dot" id="statusDot"></div>
+    <span id="statusText">idle</span>
+  </div>
+  <div class="spacer"></div>
+  <button class="header-btn" onclick="pauseResume()" id="pauseBtn" style="display:none">Pause</button>
+  <button class="header-btn danger" onclick="stopRun()" id="stopBtn" style="display:none">Stop</button>
+</header>
+
+<div class="project-strip">
+  <span class="project-label">Project folder</span>
+  <input class="project-path" id="projectPath" placeholder="/absolute/path/to/project" onkeydown="if(event.key==='Enter')openProject()">
+  <button class="btn btn-primary" id="openProjectBtn" onclick="openProject()">Open / Create</button>
+  <span class="project-state" id="projectState">No project open</span>
+</div>
+
+<nav>
+  <div class="tab active" onclick="showTab('chat',this)">Live Feed</div>
+  <div class="tab" onclick="showTab('workspace',this)">Project Files</div>
+  <div class="tab" onclick="showTab('config',this)">Agents</div>
+  <div class="tab" onclick="showTab('history',this)">Run History</div>
+</nav>
+
+<div class="main">
+
+  <!-- ── Live Feed ── -->
+  <div class="panel active" id="panel-chat">
+    <div class="chat-layout">
+      <div class="chat-sidebar">
+        <div class="idea-form">
+          <div class="sidebar-label">Project brief</div>
+          <textarea id="ideaInput" placeholder="Optional when the project contains AGENTFLOW.md"></textarea>
+          <div class="brief-tools">
+            <button class="btn btn-primary" id="startBtn" onclick="startRun()">Start run</button>
+            <button class="btn btn-secondary" onclick="saveBrief()">Save AGENTFLOW.md</button>
+            <button class="btn btn-secondary" onclick="clearFeed()">Clear feed</button>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:6px">
+            <input type="number" id="debateRounds" value="4" min="1" max="20" style="width:60px" title="Debate rounds">
+            <label style="align-self:center;font-size:11px">rounds</label>
+            <input type="number" id="buildIters" value="3" min="1" max="10" style="width:60px" title="Build iterations">
+            <label style="align-self:center;font-size:11px">iters</label>
+          </div>
+        </div>
+        <div class="sidebar-section" style="flex:1;overflow-y:auto">
+          <div class="sidebar-label">Agents</div>
+          <div id="agentList"></div>
+        </div>
+      </div>
+      <div class="feed-area">
+        <div class="feed" id="feed"></div>
+        <div class="steer-bar">
+          <input id="steerInput" placeholder="Steer agents — inject a message into the active run…" onkeydown="if(event.key==='Enter')steer()">
+          <button class="btn btn-secondary" onclick="steer()">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Workspace ── -->
+  <div class="panel" id="panel-workspace">
+    <div class="ws-layout">
+      <div class="ws-sidebar">
+        <div class="sidebar-label" style="margin-bottom:10px">AgentFlow state</div>
+        <button class="ws-file-btn active" onclick="loadWsFile('design')" id="wsbtn-design">DESIGN.md</button>
+        <button class="ws-file-btn" onclick="loadWsFile('plan')" id="wsbtn-plan">PLAN.md</button>
+        <button class="ws-file-btn" onclick="loadWsFile('consensus')" id="wsbtn-consensus">CONSENSUS.md</button>
+        <button class="ws-file-btn" onclick="loadWsFile('tests')" id="wsbtn-tests">TEST_RESULTS.md</button>
+        <div style="margin:10px 0 6px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Project files</div>
+        <div id="srcFileList"></div>
+      </div>
+      <div class="ws-content">
+        <button class="btn btn-secondary ws-refresh" onclick="refreshWorkspace()">↻ Refresh</button>
+        <pre id="wsContent">Select a file to view its contents.</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Agent Config ── -->
+  <div class="panel" id="panel-config">
+    <div class="config-layout">
+      <h2>Agent Configuration</h2>
+      <p class="muted-note">Saved inside this project. API keys remain in memory only and are never written to SQLite. Duplicate a CLI agent to give each named role an independent conversation.</p>
+      <div class="agent-cards" id="agentCards"></div>
+      <button class="add-agent-btn" onclick="addAgentCard()">＋ Add agent</button>
+      <div style="margin-top:16px">
+        <button class="btn btn-primary" onclick="saveAgents()">Save agents</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" id="panel-history">
+    <div class="history-layout">
+      <h2>Run History</h2>
+      <p class="muted-note" style="margin-top:8px">Persisted in <code>.agentflow/agentflow.db</code> for this project.</p>
+      <div class="history-grid" id="historyGrid"><div class="empty-state">Open a project to view previous runs.</div></div>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="token-bar">
+  Total tokens: <span id="totalTokens">0</span>
+  &nbsp;·&nbsp; Cached input: <span id="totalCachedTokens">0</span>
+  &nbsp;·&nbsp; Estimated cost: <span id="totalCost">$0.000000</span>
+  &nbsp;·&nbsp; Events: <span id="eventCount">0</span>
+  &nbsp;·&nbsp; Run: <span id="runId">—</span>
+</div>
+
+<script>
+// ── State ───────────────────────────────────────────────────────────────────
+let appStatus = 'idle';
+let totalTokens = 0;
+let totalCost = 0;
+let eventCount = 0;
+let agentColors = {};
+const COLORS = ['#818cf8','#22c55e','#14b8a6','#f97316','#eab308','#ec4899','#06b6d4'];
+let colorIdx = 0;
+let agentConfigs = []; // local copy for config panel
+let currentWsKey = 'design';
+let paused = false;
+let projectOpen = false;
+let currentProjectPath = '';
+let toastTimer = null;
+
+function notify(message, isError=false) {
+  const toast = document.getElementById('toast');
+  toast.textContent = message;
+  toast.className = `toast show ${isError ? 'error' : ''}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.className = 'toast', 2600);
+}
+
+async function openProject() {
+  const path = document.getElementById('projectPath').value.trim();
+  if (!path) { notify('Enter an absolute project folder', true); return false; }
+  const response = await fetch('/project/open', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({path})
+  });
+  const data = await response.json();
+  if (!response.ok) { notify(data.detail || 'Could not open project', true); return false; }
+  projectOpen = true;
+  currentProjectPath = data.path;
+  document.getElementById('projectPath').value = data.path;
+  document.getElementById('projectState').textContent = 'Ready · project state loaded';
+  document.getElementById('projectState').className = 'project-state ready';
+  document.getElementById('ideaInput').value = data.brief || '';
+  agentConfigs = data.agents || [];
+  currentWsKey = 'design';
+  renderAgentCards();
+  renderHistory(data.recent_runs || []);
+  await fetchAgentStatus();
+  notify(data.brief ? 'Project opened · AGENTFLOW.md loaded' : 'Project opened');
+  return true;
+}
+
+async function loadCurrentProject() {
+  const data = await fetch('/project').then(r=>r.json());
+  if (!data.open) return;
+  projectOpen = true;
+  currentProjectPath = data.path;
+  document.getElementById('projectPath').value = data.path;
+  document.getElementById('projectState').textContent = 'Ready · project state loaded';
+  document.getElementById('projectState').className = 'project-state ready';
+  document.getElementById('ideaInput').value = data.brief || '';
+  renderHistory(data.recent_runs || []);
+}
+
+async function saveBrief() {
+  if (!projectOpen) { notify('Open a project first', true); return; }
+  const content = document.getElementById('ideaInput').value.trim();
+  if (!content) { notify('Write a project brief first', true); return; }
+  const response = await fetch('/project/brief', {
+    method:'PUT', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({content})
+  });
+  const data = await response.json();
+  if (!response.ok) { notify(data.detail || 'Could not save brief', true); return; }
+  notify('AGENTFLOW.md saved');
+}
+
+// ── SSE connection ───────────────────────────────────────────────────────────
+function connectSSE() {
+  const es = new EventSource('/events');
+  es.onmessage = e => {
+    const ev = JSON.parse(e.data);
+    handleEvent(ev);
+  };
+  // EventSource reconnects itself. Creating another instance here multiplies
+  // streams and replays history once per connection.
+  es.onerror = () => {};
+}
+
+function handleEvent(ev) {
+  eventCount++;
+  document.getElementById('eventCount').textContent = eventCount;
+
+  // Update status
+  if (ev.kind === 'phase') updateStatus('running');
+  if (ev.kind === 'done')  { updateStatus('done'); loadRunHistory(); }
+  if (ev.kind === 'error') updateStatus('error');
+
+  // Render feed item
+  appendFeed(ev);
+
+  // Update agent sidebar on turn events
+  if (ev.kind === 'turn_start' || ev.kind === 'turn_end' || ev.kind === 'retry') {
+    fetchAgentStatus();
+  }
+}
+
+function appendFeed(ev) {
+  const feed = document.getElementById('feed');
+  const div = document.createElement('div');
+  div.className = `feed-item ${ev.kind}`;
+
+  const agentColor = agentColors[ev.agent] || '#64748b';
+  const ts = ev.timestamp ? new Date(ev.timestamp).toLocaleTimeString() : '';
+
+  let summary = '';
+  let detail = '';
+
+  switch(ev.kind) {
+    case 'phase':
+      summary = `Phase: ${ev.data.phase?.toUpperCase() || ''} ${ev.data.status ? '— ' + ev.data.status : ''} ${ev.data.iteration ? 'iter ' + ev.data.iteration : ''} ${ev.data.round ? 'round ' + ev.data.round : ''}`;
+      if (ev.data.roles) summary += ' | ' + Object.entries(ev.data.roles).map(([r,a])=>`${a}=${r}`).join(' ');
+      break;
+    case 'turn_start':
+      summary = `Speaking… (${ev.data.role || ev.data.phase || ''} ${ev.data.round ? 'round '+ev.data.round : ''} ${ev.data.iteration ? 'iter '+ev.data.iteration : ''})`;
+      break;
+    case 'turn_end':
+      const u = ev.data.usage || {};
+      summary = `Done (${(u.input_tokens||0).toLocaleString()} in · ${(u.cached_input_tokens||0).toLocaleString()} cached · ${(u.output_tokens||0).toLocaleString()} out)`;
+      detail = ev.data.response || '';
+      break;
+    case 'vote':
+      summary = `Vote: ${ev.data.vote} (round ${ev.data.round})`;
+      break;
+    case 'verdict':
+      summary = `${ev.data.role?.toUpperCase()} verdict: ${ev.data.verdict}`;
+      break;
+    case 'consensus':
+      summary = ev.data.forced ? '⚠ Forced consensus (max rounds)' : `✓ Consensus reached in round ${ev.data.round}`;
+      break;
+    case 'file_write':
+      summary = `Wrote ${ev.data.file}`;
+      detail = ev.data.preview || '';
+      break;
+    case 'steer':
+      summary = `Steering injected: "${ev.data.message}"`;
+      break;
+    case 'retry':
+      summary = `Usage limit reached · retry ${ev.data.attempt} in ${formatDuration(ev.data.retry_in_seconds)}`;
+      detail = ev.data.reason || '';
+      break;
+    case 'done':
+      summary = '✅ Run complete';
+      updateStatus('done');
+      break;
+    case 'error':
+      summary = `Error: ${ev.data.error}`;
+      break;
+    default:
+      summary = JSON.stringify(ev.data).slice(0, 100);
+  }
+
+  div.innerHTML = `
+    <div class="feed-row">
+      <span class="feed-agent" style="color:${agentColor}">${ev.agent || 'system'}</span>
+      <span class="feed-kind">${ev.kind}</span>
+      <span class="feed-text">${escHtml(summary)}</span>
+      <span class="feed-ts">${ts}</span>
+    </div>
+    ${detail ? `<div class="feed-detail" onclick="this.classList.toggle('expanded')">${escHtml(detail.slice(0,400))}${detail.length>400?'…':''}</div>` : ''}
+  `;
+
+  feed.appendChild(div);
+  feed.scrollTop = feed.scrollHeight;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function escAttr(s) {
+  return escHtml(s).replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// ── Run controls ─────────────────────────────────────────────────────────────
+async function startRun() {
+  const idea = document.getElementById('ideaInput').value.trim();
+  if (!projectOpen) {
+    const opened = await openProject();
+    if (!opened) return;
+  }
+
+  const agents = await fetch('/agents').then(r=>r.json());
+  if (!agents.agents?.length) { notify('Add at least one agent in the Agents tab', true); return; }
+
+  // Assign colors
+  agents.agents.forEach(a => {
+    if (!agentColors[a.name]) agentColors[a.name] = COLORS[colorIdx++ % COLORS.length];
+  });
+
+  totalTokens = 0;
+  totalCost = 0;
+  eventCount = 0;
+  document.getElementById('totalTokens').textContent = '0';
+  document.getElementById('totalCachedTokens').textContent = '0';
+  document.getElementById('totalCost').textContent = '$0.000000';
+  document.getElementById('eventCount').textContent = '0';
+  document.getElementById('feed').innerHTML = '';
+
+  const res = await fetch('/run/start', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      idea,
+      project_path: currentProjectPath,
+      max_debate_rounds: parseInt(document.getElementById('debateRounds').value) || 4,
+      max_build_iterations: parseInt(document.getElementById('buildIters').value) || 3,
+    })
+  });
+  const data = await res.json();
+  if (res.ok && data.ok) {
+    document.getElementById('runId').textContent = data.run_id;
+    updateStatus('running');
+  } else {
+    notify(data.detail || 'Failed to start', true);
+  }
+}
+
+function formatDuration(seconds) {
+  seconds = Number(seconds || 0);
+  if (seconds >= 3600) return `${Math.ceil(seconds/3600)}h`;
+  if (seconds >= 60) return `${Math.ceil(seconds/60)}m`;
+  return `${Math.ceil(seconds)}s`;
+}
+
+async function pauseResume() {
+  if (paused) {
+    await fetch('/run/resume', {method:'POST'});
+    paused = false;
+    document.getElementById('pauseBtn').textContent = 'Pause';
+    updateStatus('running');
+  } else {
+    await fetch('/run/pause', {method:'POST'});
+    paused = true;
+    document.getElementById('pauseBtn').textContent = 'Resume';
+    updateStatus('paused');
+  }
+}
+
+async function stopRun() {
+  if (!confirm('Stop the current run?')) return;
+  await fetch('/run/stop', {method:'POST'});
+  paused = false;
+  updateStatus('idle');
+}
+
+async function steer() {
+  const msg = document.getElementById('steerInput').value.trim();
+  if (!msg) return;
+  await fetch('/run/steer', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({message: msg})
+  });
+  document.getElementById('steerInput').value = '';
+}
+
+function updateStatus(s) {
+  appStatus = s;
+  const dot = document.getElementById('statusDot');
+  const txt = document.getElementById('statusText');
+  const pauseBtn = document.getElementById('pauseBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  dot.className = `status-dot ${s}`;
+  txt.textContent = s;
+  const running = s === 'running' || s === 'paused';
+  pauseBtn.style.display = running ? '' : 'none';
+  stopBtn.style.display  = running ? '' : 'none';
+}
+
+async function fetchAgentStatus() {
+  const res = await fetch('/run/status').then(r=>r.json());
+  let visibleAgents = res.agents || [];
+  if (!visibleAgents.length) {
+    const configured = await fetch('/agents').then(r=>r.json());
+    visibleAgents = (configured.agents || []).map(a => ({...a, status:'idle', total_tokens:0,
+      input_tokens:0, cached_input_tokens:0, output_tokens:0, cost_usd:0, pricing_known:false}));
+  }
+  const list = document.getElementById('agentList');
+  const maxTokens = Math.max(1, ...visibleAgents.map(a => a.total_tokens || 0));
+  list.innerHTML = visibleAgents.map(a => {
+    const color = agentColors[a.name] || '#64748b';
+    const statusColor = {thinking:'var(--yellow)',waiting:'var(--yellow)',done:'var(--green)',error:'var(--red)',idle:'var(--muted)'}[a.status] || 'var(--muted)';
+    const cost = a.pricing_known ? formatCost(a.cost_usd || 0) : 'cost n/a';
+    const pct = Math.max(0, Math.min(100, ((a.total_tokens||0) / maxTokens) * 100));
+    const retry = a.status === 'waiting' && a.retry_at ? `<div class="usage-detail" style="color:var(--yellow)">retry scheduled ${new Date(a.retry_at).toLocaleTimeString()}</div>` : '';
+    return `<div class="agent-chip" style="display:block">
+      <div style="display:flex;align-items:center;gap:8px">
+      <div class="agent-dot" style="background:${color}"></div>
+      <div style="flex:1;min-width:0">
+        <div class="aname">${escHtml(a.name)}</div>
+        <div class="akind">${escHtml(a.role || 'Generalist')} · ${escHtml(a.kind)} ${a.model ? '· '+escHtml(a.model) : ''}</div>
+      </div>
+      <div style="text-align:right">
+        <div class="astatus" style="color:${statusColor}">${a.status}</div>
+        <div class="token-count">${(a.total_tokens||0).toLocaleString()} tok · ${cost}</div>
+      </div>
+      </div>
+      <div class="usage-detail">in ${(a.input_tokens||0).toLocaleString()} · cached ${(a.cached_input_tokens||0).toLocaleString()} · out ${(a.output_tokens||0).toLocaleString()}</div>
+      ${retry}
+      <div class="usage-track"><div class="usage-fill" style="width:${pct}%;background:${color}"></div></div>
+    </div>`;
+  }).join('');
+
+  totalTokens = (res.agents || []).reduce((sum, a) => sum + (a.total_tokens || 0), 0);
+  const cached = (res.agents || []).reduce((sum, a) => sum + (a.cached_input_tokens || 0), 0);
+  totalCost = (res.agents || []).reduce((sum, a) => sum + (a.cost_usd || 0), 0);
+  const allKnown = (res.agents || []).every(a => a.pricing_known);
+  document.getElementById('totalTokens').textContent = totalTokens.toLocaleString();
+  document.getElementById('totalCachedTokens').textContent = cached.toLocaleString();
+  document.getElementById('totalCost').textContent = allKnown ? formatCost(totalCost) : `${formatCost(totalCost)} + unpriced`;
+}
+
+function formatCost(value) {
+  return '$' + Number(value || 0).toFixed(value >= 0.01 ? 4 : 6);
+}
+
+function clearFeed() {
+  document.getElementById('feed').innerHTML = '';
+  totalTokens = 0; eventCount = 0;
+  document.getElementById('totalTokens').textContent = '0';
+  document.getElementById('totalCachedTokens').textContent = '0';
+  document.getElementById('totalCost').textContent = '$0.000000';
+  document.getElementById('eventCount').textContent = '0';
+}
+
+// ── Workspace ─────────────────────────────────────────────────────────────────
+async function loadWsFile(key) {
+  currentWsKey = key;
+  document.querySelectorAll('.ws-file-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById('wsbtn-'+key);
+  if (btn) btn.classList.add('active');
+
+  let content = '';
+  if (['design','plan','consensus','tests'].includes(key)) {
+    const res = await fetch(`/workspace/file/${key}`).then(r=>r.json());
+    content = res.content;
+  } else {
+    // src file
+    const encoded = key.split('/').map(encodeURIComponent).join('/');
+    const res = await fetch(`/workspace/src/${encoded}`).then(r=>r.json());
+    content = res.content;
+  }
+  document.getElementById('wsContent').textContent = content;
+}
+
+async function refreshWorkspace() {
+  const ws = await fetch('/workspace').then(r=>r.json());
+  // Update src file list
+  const srcList = document.getElementById('srcFileList');
+  srcList.innerHTML = (ws.src_files||[]).map(f =>
+    `<button class="ws-file-btn" onclick="loadWsFile(decodeURIComponent('${encodeURIComponent(f)}'))">${escHtml(f)}</button>`
+  ).join('');
+  // Reload current file
+  await loadWsFile(currentWsKey);
+}
+
+async function loadRunHistory() {
+  const data = await fetch('/runs').then(r=>r.json());
+  renderHistory(data.runs || []);
+}
+
+function renderHistory(runs) {
+  const grid = document.getElementById('historyGrid');
+  if (!runs.length) {
+    grid.innerHTML = '<div class="empty-state">No saved runs for this project yet.</div>';
+    return;
+  }
+  grid.innerHTML = runs.map(run => `<div class="run-card">
+    <div class="run-card-title">${escHtml(run.idea)}</div>
+    <div class="run-card-meta">
+      <div>${escHtml(run.status)} · ${new Date(run.started_at).toLocaleString()}</div>
+      <div>${Number(run.total_tokens||0).toLocaleString()} tokens · ${formatCost(run.estimated_cost_usd||0)}</div>
+      <div>run ${escHtml(run.run_id)}</div>
+    </div>
+  </div>`).join('');
+}
+
+// ── Agent config ──────────────────────────────────────────────────────────────
+const KINDS = ['claude','openai','gemini','cli','ollama'];
+
+async function loadAgentConfig() {
+  const res = await fetch('/agents').then(r=>r.json());
+  agentConfigs = res.agents || [];
+  renderAgentCards();
+}
+
+function renderAgentCards() {
+  const container = document.getElementById('agentCards');
+  container.innerHTML = agentConfigs.map((cfg, i) => `
+    <div class="agent-card" id="card-${cfg.id||i}">
+      <div class="agent-card-header">
+        <div class="agent-card-name">
+          <input value="${escAttr(cfg.name)}" placeholder="Agent name" oninput="agentConfigs[${i}].name=this.value" style="background:transparent;border:none;color:var(--text);font-size:14px;font-weight:600;width:200px">
+        </div>
+        <span class="agent-card-kind">${cfg.kind}</span>
+        <button class="btn btn-secondary" onclick="duplicateAgent(${i})" style="padding:3px 8px;font-size:11px">Duplicate</button>
+        <button class="btn btn-danger" onclick="removeAgent(${i})" style="padding:3px 8px;font-size:11px">Remove</button>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Kind</label>
+          <select onchange="agentConfigs[${i}].kind=this.value;renderAgentCards()">
+            ${KINDS.map(k=>`<option value="${k}" ${k===cfg.kind?'selected':''}>${k}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Standing role</label>
+          <input value="${escAttr(cfg.role||'')}" placeholder="Architect, skeptic, product lead…" oninput="agentConfigs[${i}].role=this.value">
+        </div>
+        <div class="form-group">
+          <label>Model</label>
+          <input value="${escAttr(cfg.model||'')}" placeholder="${modelPlaceholder(cfg.kind)}" oninput="agentConfigs[${i}].model=this.value">
+        </div>
+        ${cfg.kind==='cli' ? `
+        <div class="form-group full">
+          <label>CLI command</label>
+          <input value="${escAttr(cfg.cli_command||'')}" placeholder="codex exec --skip-git-repo-check or agy" oninput="agentConfigs[${i}].cli_command=this.value">
+        </div>
+        <div class="form-group">
+          <label>CLI session mode</label>
+          <select onchange="agentConfigs[${i}].extra={...agentConfigs[${i}].extra,session_mode:this.value}">
+            ${['auto','codex','antigravity','stateless'].map(v=>`<option value="${v}" ${((cfg.extra||{}).session_mode||'auto')===v?'selected':''}>${v}</option>`).join('')}
+          </select>
+        </div>` : `
+        <div class="form-group full">
+          <label>API Key <span style="color:var(--muted)">(leave empty to use env var)</span></label>
+          <input type="password" value="${escAttr(cfg.api_key||'')}" placeholder="sk-…" oninput="agentConfigs[${i}].api_key=this.value">
+        </div>`}
+        <div class="form-group full">
+          <label>Behavior / system prompt <span style="color:var(--muted)">(set once when the session starts)</span></label>
+          <textarea class="form-ctrl" rows="3" placeholder="How this named agent should reason, challenge, and communicate" oninput="agentConfigs[${i}].system_prompt=this.value">${escHtml(cfg.system_prompt||'')}</textarea>
+        </div>
+        <div class="form-group">
+          <label>Max history turns</label>
+          <input type="number" value="${cfg.max_history_turns||20}" min="4" max="100" oninput="agentConfigs[${i}].max_history_turns=parseInt(this.value)">
+        </div>
+        ${cfg.kind==='ollama' ? `
+        <div class="form-group">
+          <label>Ollama base URL</label>
+          <input value="${(cfg.extra||{}).base_url||'http://localhost:11434'}" onchange="agentConfigs[${i}].extra={...agentConfigs[${i}].extra,base_url:this.value}">
+        </div>` : ''}
+        <div class="form-group full" style="margin-top:6px">
+          <label>Estimated USD per 1M tokens <span style="color:var(--muted)">(blank uses known default pricing; CLI/subscription is unpriced)</span></label>
+        </div>
+        <div class="form-group">
+          <label>Input</label>
+          <input type="number" step="0.01" value="${(cfg.extra||{}).input_cost_per_million??''}" placeholder="auto" onchange="setExtraNumber(${i},'input_cost_per_million',this.value)">
+        </div>
+        <div class="form-group">
+          <label>Cached input</label>
+          <input type="number" step="0.01" value="${(cfg.extra||{}).cached_input_cost_per_million??''}" placeholder="auto" onchange="setExtraNumber(${i},'cached_input_cost_per_million',this.value)">
+        </div>
+        <div class="form-group">
+          <label>Output</label>
+          <input type="number" step="0.01" value="${(cfg.extra||{}).output_cost_per_million??''}" placeholder="auto" onchange="setExtraNumber(${i},'output_cost_per_million',this.value)">
+        </div>
+        <div class="form-group">
+          <label>Rate-limit retry base (seconds)</label>
+          <input type="number" min="1" value="${(cfg.extra||{}).rate_limit_retry_seconds??30}" oninput="setExtraNumber(${i},'rate_limit_retry_seconds',this.value)">
+        </div>
+        <div class="form-group">
+          <label>Maximum retry wait (seconds)</label>
+          <input type="number" min="1" value="${(cfg.extra||{}).rate_limit_max_wait_seconds??900}" oninput="setExtraNumber(${i},'rate_limit_max_wait_seconds',this.value)">
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function modelPlaceholder(kind) {
+  return {claude:'claude-sonnet-4-6',openai:'gpt-4o',gemini:'gemini-2.5-flash',ollama:'llama3',cli:''}[kind]||'';
+}
+
+function setExtraNumber(i, key, value) {
+  const extra = {...(agentConfigs[i].extra || {})};
+  if (value === '') delete extra[key]; else extra[key] = Number(value);
+  agentConfigs[i].extra = extra;
+}
+
+function addAgentCard() {
+  agentConfigs.push({id: 'new-'+Date.now(), name:'Agent '+(agentConfigs.length+1), role:'', kind:'claude', model:'', api_key:'', system_prompt:'', max_history_turns:20, extra:{}});
+  renderAgentCards();
+}
+
+function duplicateAgent(i) {
+  const source = agentConfigs[i];
+  agentConfigs.splice(i + 1, 0, {
+    ...source,
+    id: 'new-' + Date.now(),
+    name: source.name + ' 2',
+    extra: {...(source.extra || {})},
+  });
+  renderAgentCards();
+}
+
+function removeAgent(i) {
+  agentConfigs.splice(i, 1);
+  renderAgentCards();
+}
+
+async function saveAgents() {
+  if (!projectOpen) { notify('Open a project before saving agents', true); return; }
+  // Clear existing, re-add all
+  const existing = await fetch('/agents').then(r=>r.json());
+  await Promise.all((existing.agents||[]).map(a => fetch(`/agents/${a.id}`, {method:'DELETE'})));
+  await Promise.all(agentConfigs.map(cfg =>
+    fetch('/agents', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(cfg)})
+  ));
+  const updated = await fetch('/agents').then(r=>r.json());
+  agentConfigs = updated.agents || [];
+  // Assign colors
+  agentConfigs.forEach(a => { if(!agentColors[a.name]) agentColors[a.name] = COLORS[colorIdx++ % COLORS.length]; });
+  fetchAgentStatus();
+  notify('Agent team saved to this project');
+  renderAgentCards();
+}
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+function showTab(id, tabElement) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('panel-'+id).classList.add('active');
+  if (tabElement) tabElement.classList.add('active');
+  if (id === 'workspace') refreshWorkspace();
+  if (id === 'config') loadAgentConfig();
+  if (id === 'history') loadRunHistory();
+  if (id === 'chat') fetchAgentStatus();
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+connectSSE();
+loadCurrentProject();
+loadAgentConfig();
+fetchAgentStatus();
+setInterval(fetchAgentStatus, 4000);
+</script>
+</body>
+</html>
