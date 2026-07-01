@@ -6,6 +6,7 @@ Human steering: pause, inject a message into the debate, swap agent roles.
 
 from __future__ import annotations
 import asyncio
+import os
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -248,8 +249,41 @@ class Orchestrator:
             self.ws.init(idea)
             
         n = len(self.agents)
+        if n == 0:
+            return self.ws.snapshot()
 
         coordinator = next((a for a in self.agents if a.config.extra.get("is_coordinator")), None)
+        if not coordinator and not os.environ.get("AGENTFLOW_TEST"):
+            # Pick the best model as the coordinator
+            def get_model_score(agent: AgentBase) -> int:
+                kind = (agent.config.kind or "").lower()
+                model = (agent.config.model or "").lower()
+                if kind == "claude":
+                    if "opus" in model:
+                        return 100
+                    if "sonnet" in model:
+                        return 95
+                    return 85
+                elif kind == "openai":
+                    if "o1" in model or "o3" in model:
+                        return 98
+                    if "gpt-4" in model or "o1-mini" in model:
+                        return 90
+                    return 80
+                elif kind == "gemini":
+                    if "pro" in model:
+                        return 88
+                    if "flash" in model:
+                        return 78
+                    return 70
+                elif kind == "ollama":
+                    return 50
+                elif kind == "cli":
+                    return 10
+                return 0
+
+            coordinator = max(self.agents, key=get_model_score)
+
         if coordinator:
             await self._coordinator_loop(coordinator)
             return self.ws.snapshot()

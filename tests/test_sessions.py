@@ -1,4 +1,6 @@
 import asyncio
+import os
+os.environ["AGENTFLOW_TEST"] = "1"
 import json
 import subprocess
 import tempfile
