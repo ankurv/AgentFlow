@@ -57,9 +57,13 @@ class AppState:
         self.current_idea = workspace.brief()
         return workspace
 
-    def persist_agents(self):
-        if self.store:
-            self.store.save_agents(self.configs)
+    @property
+    def merged_configs(self) -> list[dict]:
+        # Merge global and project configs by name (case-insensitive key). Local overrides global.
+        merged = {cfg["name"].strip().lower(): cfg for cfg in load_global_agents()}
+        for cfg in self.configs:
+            merged[cfg["name"].strip().lower()] = cfg
+        return list(merged.values())
 
 
 state = AppState()
@@ -215,7 +219,12 @@ def live_agent(agent_id: str):
 
 @app.get("/agents")
 def list_agents():
-    return {"agents": state.configs, "kinds": list(AGENT_KINDS.keys())}
+    return {
+        "global": load_global_agents(),
+        "project": state.configs,
+        "merged": state.merged_configs,
+        "kinds": list(AGENT_KINDS.keys())
+    }
 
 
 @app.post("/agents")
@@ -270,9 +279,6 @@ def add_global_agent(body: AgentConfigIn):
     configs = load_global_agents()
     config = body.model_dump()
     config["id"] = str(uuid.uuid4())[:8]
-    # Clean is_coordinator and session state from templates
-    if "extra" in config and config["extra"]:
-        config["extra"] = {k: v for k, v in config["extra"].items() if k != "is_coordinator"}
     configs.append(config)
     save_global_agents(configs)
     return {"ok": True, "agent": config}
@@ -284,6 +290,19 @@ def delete_global_agent(agent_id: str):
     configs = [c for c in configs if c["id"] != agent_id]
     save_global_agents(configs)
     return {"ok": True}
+
+
+@app.put("/agents/global/{agent_id}")
+def update_global_agent(agent_id: str, body: AgentConfigIn):
+    configs = load_global_agents()
+    for index, current in enumerate(configs):
+        if current["id"] == agent_id:
+            updated = body.model_dump()
+            updated["id"] = agent_id
+            configs[index] = updated
+            save_global_agents(configs)
+            return {"ok": True, "agent": updated}
+    raise HTTPException(404, "Global agent not found")
 
 
 class StartBody(BaseModel):
@@ -308,9 +327,9 @@ async def start_run(body: StartBody):
                 raise HTTPException(400, str(exc)) from exc
     if not state.workspace:
         raise HTTPException(400, "Open a project folder first")
-    if not state.configs:
-        raise HTTPException(400, "No agents configured for this project")
-    names = [config["name"].strip() for config in state.configs]
+    if not state.merged_configs:
+        raise HTTPException(400, "No agents configured")
+    names = [config["name"].strip() for config in state.merged_configs]
     if any(not name for name in names) or len(names) != len(set(names)):
         raise HTTPException(400, "Every agent needs a unique non-empty name")
 
@@ -322,7 +341,7 @@ async def start_run(body: StartBody):
 
     agents = []
     try:
-        for config in state.configs:
+        for config in state.merged_configs:
             agents.append(create_agent(to_agent_config(config)))
     except Exception as exc:
         raise HTTPException(400, f"Could not initialize agent team: {exc}") from exc

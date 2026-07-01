@@ -367,20 +367,18 @@
   <div class="panel" id="panel-config">
     <div class="config-layout">
       <h2>Agent Configuration</h2>
-      <p class="muted-note">Saved inside this project. API keys remain in memory only and are never written to SQLite. Duplicate a CLI agent to give each named role an independent conversation.</p>
-      <div class="agent-cards" id="agentCards"></div>
-      <div style="display:flex;gap:8px;align-items:center;margin-top:16px;flex-wrap:wrap">
-        <button class="add-agent-btn" onclick="addAgentCard()" style="margin:0">＋ Add blank agent</button>
-        <div id="globalImportContainer" style="display:flex;align-items:center;gap:6px;background:var(--bg3);padding:6px;border-radius:var(--radius);border:1px solid var(--border)">
-          <select id="globalAgentSelect" style="padding:4px;font-size:12px;border-radius:var(--radius);background:var(--bg2);color:var(--text);border:1px solid var(--border2);outline:none">
-            <option value="">Choose a template...</option>
-          </select>
-          <button class="btn btn-secondary" onclick="importGlobalAgent()" style="padding:4px 10px;font-size:11px">Import Template</button>
-          <button class="btn btn-danger" onclick="deleteGlobalTemplate()" style="padding:4px 8px;font-size:11px" title="Delete selected template">✕</button>
-        </div>
-      </div>
-      <div style="margin-top:16px">
-        <button class="btn btn-primary" onclick="saveAgents()">Save agents</button>
+      <p class="muted-note">Configure agents globally to automatically run them across all projects, or define local overrides and custom agents here. Local project-specific agents override global ones of the same name.</p>
+      
+      <h3 style="margin-top:20px;margin-bottom:8px;font-size:15px;color:var(--text);border-bottom:1px solid var(--border);padding-bottom:6px">Global Team (Shared across all projects)</h3>
+      <div class="agent-cards" id="globalAgentCards"></div>
+      <button class="add-agent-btn" onclick="addGlobalAgentCard()" style="margin-top:8px">＋ Add Global Agent</button>
+      
+      <h3 style="margin-top:30px;margin-bottom:8px;font-size:15px;color:var(--text);border-bottom:1px solid var(--border);padding-bottom:6px">Project-Specific Team & Overrides</h3>
+      <div class="agent-cards" id="projectAgentCards"></div>
+      <button class="add-agent-btn" onclick="addProjectAgentCard()" style="margin-top:8px">＋ Add Project Agent</button>
+      
+      <div style="margin-top:24px;border-top:1px solid var(--border);padding-top:16px">
+        <button class="btn btn-primary" onclick="saveAllAgentConfigs()" style="padding:10px 20px;font-size:13px;font-weight:600">Save Changes</button>
       </div>
     </div>
   </div>
@@ -444,9 +442,8 @@ async function openProject() {
   document.getElementById('projectState').textContent = 'Ready · project state loaded';
   document.getElementById('projectState').className = 'project-state ready';
   document.getElementById('ideaInput').value = data.brief || '';
-  agentConfigs = data.agents || [];
   currentWsKey = 'design';
-  renderAgentCards();
+  await loadAgentConfig();
   renderHistory(data.recent_runs || []);
   await fetchAgentStatus();
   notify(data.brief ? 'Project opened · AGENTFLOW.md loaded' : 'Project opened');
@@ -463,6 +460,7 @@ async function loadCurrentProject() {
   document.getElementById('projectState').className = 'project-state ready';
   document.getElementById('ideaInput').value = data.brief || '';
   renderHistory(data.recent_runs || []);
+  await loadAgentConfig();
 }
 
 async function saveBrief() {
@@ -724,7 +722,7 @@ async function fetchAgentStatus() {
   let visibleAgents = res.agents || [];
   if (!visibleAgents.length) {
     const configured = await fetch('/agents').then(r=>r.json());
-    visibleAgents = (configured.agents || []).map(a => ({...a, status:'idle', total_tokens:0,
+    visibleAgents = (configured.merged || []).map(a => ({...a, status:'idle', total_tokens:0,
       input_tokens:0, cached_input_tokens:0, output_tokens:0, cost_usd:0, pricing_known:false}));
   }
   const list = document.getElementById('agentList');
@@ -885,141 +883,152 @@ function renderHistory(runs) {
 
 // ── Agent config ──────────────────────────────────────────────────────────────
 const KINDS = ['claude','openai','gemini','cli','ollama'];
+let globalAgentConfigs = [];
+let projectAgentConfigs = [];
 
 async function loadAgentConfig() {
   const res = await fetch('/agents').then(r=>r.json());
-  agentConfigs = res.agents || [];
+  globalAgentConfigs = res.global || [];
+  projectAgentConfigs = res.project || [];
   renderAgentCards();
-  await loadGlobalTemplates();
 }
 
 function renderAgentCards() {
-  const container = document.getElementById('agentCards');
-  container.innerHTML = agentConfigs.map((cfg, i) => `
-    <div class="agent-card" id="card-${cfg.id||i}">
-      <div class="agent-card-header">
-        <div class="agent-card-name" id="card-name-${cfg.id||i}" style="color:var(--text);font-size:14px;font-weight:600">
-          ${escHtml(cfg.name)}
-        </div>
-        <span class="agent-card-kind">${cfg.kind}</span>
-        <button class="btn btn-secondary" onclick="saveAsGlobalTemplate(${i})" style="padding:3px 8px;font-size:11px">Save as Template</button>
-        <button class="btn btn-secondary" onclick="duplicateAgent(${i})" style="padding:3px 8px;font-size:11px">Duplicate</button>
-        <button class="btn btn-danger" onclick="removeAgent(${i})" style="padding:3px 8px;font-size:11px">Remove</button>
-      </div>
-      <div class="form-grid">
-        <div class="form-group">
-          <label>Agent Name</label>
-          <input value="${escAttr(cfg.name)}" placeholder="Builder, Ada, critic..." oninput="agentConfigs[${i}].name=this.value;document.getElementById('card-name-${cfg.id||i}').textContent=this.value">
-        </div>
-        <div class="form-group">
-          <label>Kind</label>
-          <select onchange="agentConfigs[${i}].kind=this.value;renderAgentCards()">
-            ${KINDS.map(k=>`<option value="${k}" ${k===cfg.kind?'selected':''}>${k}</option>`).join('')}
-          </select>
-        </div>
-        <div class="form-group full" style="display:flex;align-items:center;gap:6px;margin:2px 0">
-          <input type="checkbox" id="coordinator-${i}" ${cfg.extra?.is_coordinator ? 'checked' : ''} onchange="toggleCoordinator(${i}, this.checked)" style="width:auto;margin:0">
-          <label for="coordinator-${i}" style="margin:0;cursor:pointer;font-size:12px;font-weight:600">Designate as Team Coordinator</label>
-        </div>
-        <div class="form-group">
-          <label>Standing role</label>
-          <input value="${escAttr(cfg.role||'')}" placeholder="Architect, skeptic, product lead…" oninput="agentConfigs[${i}].role=this.value">
-        </div>
-        <div class="form-group">
-          <label>Model</label>
-          <input value="${escAttr(cfg.model||'')}" placeholder="${modelPlaceholder(cfg.kind)}" oninput="agentConfigs[${i}].model=this.value">
-        </div>
-        ${cfg.kind==='cli' ? `
-        <div class="form-group full">
-          <label>CLI command</label>
-          <input value="${escAttr(cfg.cli_command||'')}" placeholder="codex exec --skip-git-repo-check or agy" oninput="agentConfigs[${i}].cli_command=this.value">
-        </div>
-        <div class="form-group">
-          <label>CLI session mode</label>
-          <select onchange="agentConfigs[${i}].extra={...agentConfigs[${i}].extra,session_mode:this.value}">
-            ${['auto','codex','antigravity','stateless'].map(v=>`<option value="${v}" ${((cfg.extra||{}).session_mode||'auto')===v?'selected':''}>${v}</option>`).join('')}
-          </select>
-        </div>` : `
-        <div class="form-group full">
-          <label>API Key <span style="color:var(--muted)">(leave empty to use env var)</span></label>
-          <input type="password" value="${escAttr(cfg.api_key||'')}" placeholder="sk-…" oninput="agentConfigs[${i}].api_key=this.value">
-        </div>`}
-        <div class="form-group full">
-          <label>Behavior / system prompt <span style="color:var(--muted)">(set once when the session starts)</span></label>
-          <textarea class="form-ctrl" rows="3" placeholder="How this named agent should reason, challenge, and communicate" oninput="agentConfigs[${i}].system_prompt=this.value">${escHtml(cfg.system_prompt||'')}</textarea>
-        </div>
-        <details class="advanced-settings-details" style="grid-column:1 / -1;margin-top:8px">
-          <summary style="font-size:12px;color:var(--muted);cursor:pointer;user-select:none;outline:none">Advanced Settings</summary>
-          <div class="form-grid" style="margin-top:8px;border-top:1px solid rgba(255,255,255,0.08);padding-top:8px">
-            <div class="form-group">
-              <label>Max history turns</label>
-              <input type="number" value="${cfg.max_history_turns||20}" min="4" max="100" oninput="agentConfigs[${i}].max_history_turns=parseInt(this.value)">
-            </div>
-            ${cfg.kind==='ollama' ? `
-            <div class="form-group">
-              <label>Ollama base URL</label>
-              <input value="${(cfg.extra||{}).base_url||'http://localhost:11434'}" onchange="agentConfigs[${i}].extra={...agentConfigs[${i}].extra,base_url:this.value}">
-            </div>` : ''}
-            <div class="form-group full" style="margin-top:6px">
-              <label>Estimated USD per 1M tokens <span style="color:var(--muted)">(blank uses known default pricing; CLI/subscription is unpriced)</span></label>
-            </div>
-            <div class="form-group">
-              <label>Input</label>
-              <input type="number" step="0.01" value="${(cfg.extra||{}).input_cost_per_million??''}" placeholder="auto" onchange="setExtraNumber(${i},'input_cost_per_million',this.value)">
-            </div>
-            <div class="form-group">
-              <label>Cached input</label>
-              <input type="number" step="0.01" value="${(cfg.extra||{}).cached_input_cost_per_million??''}" placeholder="auto" onchange="setExtraNumber(${i},'cached_input_cost_per_million',this.value)">
-            </div>
-            <div class="form-group">
-              <label>Output</label>
-              <input type="number" step="0.01" value="${(cfg.extra||{}).output_cost_per_million??''}" placeholder="auto" onchange="setExtraNumber(${i},'output_cost_per_million',this.value)">
-            </div>
-            <div class="form-group">
-              <label>Rate-limit retry base (seconds)</label>
-              <input type="number" min="1" value="${(cfg.extra||{}).rate_limit_retry_seconds??30}" oninput="setExtraNumber(${i},'rate_limit_retry_seconds',this.value)">
-            </div>
-            <div class="form-group">
-              <label>Maximum retry wait (seconds)</label>
-              <input type="number" min="1" value="${(cfg.extra||{}).rate_limit_max_wait_seconds??900}" oninput="setExtraNumber(${i},'rate_limit_max_wait_seconds',this.value)">
-            </div>
+  renderAgentList('globalAgentCards', globalAgentConfigs, true);
+  renderAgentList('projectAgentCards', projectAgentConfigs, false);
+}
+
+function renderAgentList(containerId, configs, isGlobal) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  
+  const arrayName = isGlobal ? 'globalAgentConfigs' : 'projectAgentConfigs';
+  
+  container.innerHTML = configs.map((cfg, i) => {
+    const uniqueId = `${isGlobal ? 'g' : 'p'}-${cfg.id || i}`;
+    const checkedCoordinator = cfg.extra?.is_coordinator ? 'checked' : '';
+    
+    return `
+      <div class="agent-card" id="card-${uniqueId}">
+        <div class="agent-card-header">
+          <div class="agent-card-name" id="card-name-${uniqueId}" style="color:var(--text);font-size:14px;font-weight:600">
+            ${escHtml(cfg.name)}
           </div>
-        </details>
+          <span class="agent-card-kind">${cfg.kind}</span>
+          ${!isGlobal ? `<button class="btn btn-secondary" onclick="makeAgentGlobal(${i})" style="padding:3px 8px;font-size:11px">Make Global</button>` : ''}
+          <button class="btn btn-secondary" onclick="duplicateAgent(${i}, ${isGlobal})" style="padding:3px 8px;font-size:11px">Duplicate</button>
+          <button class="btn btn-danger" onclick="removeAgent(${i}, ${isGlobal})" style="padding:3px 8px;font-size:11px">Remove</button>
+        </div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Agent Name</label>
+            <input value="${escAttr(cfg.name)}" placeholder="Builder, Ada, critic..." oninput="${arrayName}[${i}].name=this.value;document.getElementById('card-name-${uniqueId}').textContent=this.value">
+          </div>
+          <div class="form-group">
+            <label>Kind</label>
+            <select onchange="${arrayName}[${i}].kind=this.value;renderAgentCards()">
+              ${KINDS.map(k=>`<option value="${k}" ${k===cfg.kind?'selected':''}>${k}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group full" style="display:flex;align-items:center;gap:6px;margin:2px 0">
+            <input type="checkbox" id="coordinator-${uniqueId}" ${checkedCoordinator} onchange="toggleCoordinator(${i}, ${isGlobal}, this.checked)" style="width:auto;margin:0">
+            <label for="coordinator-${uniqueId}" style="cursor:pointer;font-weight:600;font-size:11px;user-select:none;margin:0">Team Coordinator (acts as manager of the agent debate & execution loop)</label>
+          </div>
+          <div class="form-group">
+            <label>Role</label>
+            <input value="${escAttr(cfg.role||'')}" placeholder="developer, reviewer, tester..." oninput="${arrayName}[${i}].role=this.value">
+          </div>
+          <div class="form-group">
+            <label>Model</label>
+            <input value="${escAttr(cfg.model||'')}" placeholder="${modelPlaceholder(cfg.kind)}" oninput="${arrayName}[${i}].model=this.value">
+          </div>
+          
+          <details class="advanced-settings-details" style="grid-column: span 2; margin-top: 8px;">
+            <summary style="font-size:11px;font-weight:600;color:var(--text-muted);cursor:pointer;user-select:none;outline:none">Advanced Settings</summary>
+            <div class="form-grid" style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border2)">
+              <div class="form-group full">
+                <label>API Key</label>
+                <input type="password" value="${escAttr(cfg.api_key||'')}" placeholder="fallback to env var" oninput="${arrayName}[${i}].api_key=this.value">
+              </div>
+              <div class="form-group full">
+                <label>CLI command (for local models)</label>
+                <input value="${escAttr(cfg.cli_command||'')}" placeholder="e.g. ollama run llama3" oninput="${arrayName}[${i}].cli_command=this.value">
+              </div>
+              <div class="form-group full">
+                <label>System Prompt (overrides default roles)</label>
+                <textarea style="height:60px" oninput="${arrayName}[${i}].system_prompt=this.value">${escHtml(cfg.system_prompt||'')}</textarea>
+              </div>
+              <div class="form-group">
+                <label>Max history turns</label>
+                <input type="number" min="1" value="${cfg.max_history_turns||20}" oninput="${arrayName}[${i}].max_history_turns=parseInt(this.value)||20">
+              </div>
+              <div class="form-group">
+                <label>Input cost /M tok</label>
+                <input type="number" step="0.01" value="${(cfg.extra||{}).input_cost_per_million??''}" placeholder="auto" onchange="setExtraVal(${i}, ${isGlobal}, 'input_cost_per_million', this.value)">
+              </div>
+              <div class="form-group">
+                <label>Cached input</label>
+                <input type="number" step="0.01" value="${(cfg.extra||{}).cached_input_cost_per_million??''}" placeholder="auto" onchange="setExtraVal(${i}, ${isGlobal}, 'cached_input_cost_per_million', this.value)">
+              </div>
+              <div class="form-group">
+                <label>Output</label>
+                <input type="number" step="0.01" value="${(cfg.extra||{}).output_cost_per_million??''}" placeholder="auto" onchange="setExtraVal(${i}, ${isGlobal}, 'output_cost_per_million', this.value)">
+              </div>
+              <div class="form-group">
+                <label>Rate-limit retry base (seconds)</label>
+                <input type="number" min="1" value="${(cfg.extra||{}).rate_limit_retry_seconds??30}" oninput="setExtraVal(${i}, ${isGlobal}, 'rate_limit_retry_seconds', this.value)">
+              </div>
+              <div class="form-group">
+                <label>Maximum retry wait (seconds)</label>
+                <input type="number" min="1" value="${(cfg.extra||{}).rate_limit_max_wait_seconds??900}" oninput="setExtraVal(${i}, ${isGlobal}, 'rate_limit_max_wait_seconds', this.value)">
+              </div>
+            </div>
+          </details>
+        </div>
       </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 }
 
 function modelPlaceholder(kind) {
   return {claude:'claude-sonnet-4-6',openai:'gpt-4o',gemini:'gemini-2.5-flash',ollama:'llama3',cli:''}[kind]||'';
 }
 
-function setExtraNumber(i, key, value) {
-  const extra = {...(agentConfigs[i].extra || {})};
+function setExtraVal(i, isGlobal, key, value) {
+  const arr = isGlobal ? globalAgentConfigs : projectAgentConfigs;
+  const extra = {...(arr[i].extra || {})};
   if (value === '') delete extra[key]; else extra[key] = Number(value);
-  agentConfigs[i].extra = extra;
+  arr[i].extra = extra;
 }
 
-function toggleCoordinator(idx, checked) {
-  agentConfigs.forEach((cfg, i) => {
+function toggleCoordinator(idx, isGlobal, checked) {
+  globalAgentConfigs.forEach((cfg, i) => {
     if (!cfg.extra) cfg.extra = {};
-    if (i === idx) {
-      cfg.extra.is_coordinator = checked;
-    } else if (checked) {
-      cfg.extra.is_coordinator = false;
-    }
+    if (isGlobal && i === idx) cfg.extra.is_coordinator = checked;
+    else if (checked) cfg.extra.is_coordinator = false;
+  });
+  projectAgentConfigs.forEach((cfg, i) => {
+    if (!cfg.extra) cfg.extra = {};
+    if (!isGlobal && i === idx) cfg.extra.is_coordinator = checked;
+    else if (checked) cfg.extra.is_coordinator = false;
   });
   renderAgentCards();
 }
 
-function addAgentCard() {
-  agentConfigs.push({id: 'new-'+Date.now(), name:'Agent '+(agentConfigs.length+1), role:'', kind:'claude', model:'', api_key:'', system_prompt:'', max_history_turns:20, extra:{}});
+function addGlobalAgentCard() {
+  globalAgentConfigs.push({id: 'new-'+Date.now(), name:'Global Agent '+(globalAgentConfigs.length+1), role:'', kind:'claude', model:'', api_key:'', system_prompt:'', max_history_turns:20, extra:{}});
   renderAgentCards();
 }
 
-function duplicateAgent(i) {
-  const source = agentConfigs[i];
-  agentConfigs.splice(i + 1, 0, {
+function addProjectAgentCard() {
+  projectAgentConfigs.push({id: 'new-'+Date.now(), name:'Project Agent '+(projectAgentConfigs.length+1), role:'', kind:'claude', model:'', api_key:'', system_prompt:'', max_history_turns:20, extra:{}});
+  renderAgentCards();
+}
+
+function duplicateAgent(i, isGlobal) {
+  const arr = isGlobal ? globalAgentConfigs : projectAgentConfigs;
+  const source = arr[i];
+  arr.splice(i + 1, 0, {
     ...source,
     id: 'new-' + Date.now(),
     name: source.name + ' 2',
@@ -1028,127 +1037,74 @@ function duplicateAgent(i) {
   renderAgentCards();
 }
 
-function removeAgent(i) {
-  agentConfigs.splice(i, 1);
+function removeAgent(i, isGlobal) {
+  const arr = isGlobal ? globalAgentConfigs : projectAgentConfigs;
+  arr.splice(i, 1);
   renderAgentCards();
 }
 
-let globalTemplates = [];
-
-async function loadGlobalTemplates() {
-  try {
-    const res = await fetch('/agents/global').then(r=>r.json());
-    globalTemplates = res.agents || [];
-    const select = document.getElementById('globalAgentSelect');
-    if (select) {
-      select.innerHTML = '<option value="">Choose a template...</option>' +
-        globalTemplates.map(t => `<option value="${t.id}">${escHtml(t.name)} (${escHtml(t.role || t.kind)})</option>`).join('');
-    }
-  } catch (err) {
-    console.error('Failed to load global templates', err);
-  }
-}
-
-async function saveAsGlobalTemplate(idx) {
-  const local = agentConfigs[idx];
-  if (!local) return;
-  try {
-    const res = await fetch('/agents/global', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        name: local.name,
-        kind: local.kind,
-        role: local.role,
-        model: local.model,
-        api_key: local.api_key || '',
-        system_prompt: local.system_prompt || '',
-        max_history_turns: local.max_history_turns || 20,
-        extra: local.extra || {}
-      })
-    }).then(r=>r.json());
-    if (res.ok) {
-      notify(`Saved ${local.name} as a global template`);
-      await loadGlobalTemplates();
-    } else {
-      notify('Failed to save template', true);
-    }
-  } catch (err) {
-    notify('Failed to save template: ' + err, true);
-  }
-}
-
-async function importGlobalAgent() {
-  const select = document.getElementById('globalAgentSelect');
-  if (!select) return;
-  const templateId = select.value;
-  if (!templateId) { notify('Select a template to import', true); return; }
-  const template = globalTemplates.find(t => t.id === templateId);
-  if (!template) return;
-
-  const freshCopy = {
-    ...template,
+function makeAgentGlobal(i) {
+  const source = projectAgentConfigs[i];
+  globalAgentConfigs.push({
+    ...source,
     id: 'new-' + Date.now(),
-    api_key: template.api_key || '',
-    extra: {...(template.extra || {})}
-  };
-  agentConfigs.push(freshCopy);
+    extra: {...(source.extra || {})}
+  });
+  projectAgentConfigs.splice(i, 1);
   renderAgentCards();
-  select.value = '';
-  notify(`Imported template ${template.name}`);
+  notify(`Moved "${source.name}" to the Global Team list.`);
 }
 
-async function deleteGlobalTemplate() {
-  const select = document.getElementById('globalAgentSelect');
-  if (!select) return;
-  const templateId = select.value;
-  if (!templateId) { notify('Select a template to delete', true); return; }
-  const template = globalTemplates.find(t => t.id === templateId);
-  if (!template) return;
-  if (!confirm(`Are you sure you want to delete the template "${template.name}"?`)) return;
-  try {
-    const res = await fetch(`/agents/global/${templateId}`, {method: 'DELETE'}).then(r=>r.json());
-    if (res.ok) {
-      notify(`Deleted template "${template.name}"`);
-      await loadGlobalTemplates();
-    } else {
-      notify('Failed to delete template', true);
-    }
-  } catch (err) {
-    notify('Failed to delete template: ' + err, true);
-  }
-}
-
-async function saveAgents() {
-  if (!projectOpen) { notify('Open a project before saving agents', true); return; }
-  const existing = await fetch('/agents').then(r=>r.json());
-  const existingIds = new Set((existing.agents || []).map(a => a.id));
-  const desiredIds = new Set(agentConfigs.filter(c => existingIds.has(c.id)).map(c => c.id));
-
-  for (const cfg of agentConfigs) {
-    const isExisting = existingIds.has(cfg.id);
-    const response = await fetch(isExisting ? `/agents/${cfg.id}` : '/agents', {
+async function saveAllAgentConfigs() {
+  // 1. Save global agents
+  const existingGlobal = await fetch('/agents/global').then(r=>r.json());
+  const existingGlobalIds = new Set((existingGlobal.agents || []).map(a => a.id));
+  const desiredGlobalIds = new Set(globalAgentConfigs.filter(c => existingGlobalIds.has(c.id)).map(c => c.id));
+  
+  for (const cfg of globalAgentConfigs) {
+    const isExisting = existingGlobalIds.has(cfg.id);
+    const response = await fetch(isExisting ? `/agents/global/${cfg.id}` : '/agents/global', {
       method: isExisting ? 'PUT' : 'POST',
       headers: {'Content-Type':'application/json'}, body: JSON.stringify(cfg),
     });
     const data = await response.json();
-    if (!response.ok) { notify(data.detail || `Could not save ${cfg.name}`, true); return; }
+    if (!response.ok) { notify(data.detail || `Could not save global agent ${cfg.name}`, true); return; }
   }
-  for (const old of (existing.agents || [])) {
-    if (!desiredIds.has(old.id)) {
-      const response = await fetch(`/agents/${old.id}`, {method:'DELETE'});
-      const data = await response.json();
-      if (!response.ok) { notify(data.detail || `Could not remove ${old.name}`, true); return; }
+  for (const old of (existingGlobal.agents || [])) {
+    if (!desiredGlobalIds.has(old.id)) {
+      await fetch(`/agents/global/${old.id}`, {method: 'DELETE'});
     }
   }
+  
+  // 2. Save project agents (only if project is open)
+  if (projectOpen) {
+    const existingProject = await fetch('/agents').then(r=>r.json());
+    const existingProjIds = new Set((existingProject.project || []).map(a => a.id));
+    const desiredProjIds = new Set(projectAgentConfigs.filter(c => existingProjIds.has(c.id)).map(c => c.id));
+    
+    for (const cfg of projectAgentConfigs) {
+      const isExisting = existingProjIds.has(cfg.id);
+      const response = await fetch(isExisting ? `/agents/${cfg.id}` : '/agents', {
+        method: isExisting ? 'PUT' : 'POST',
+        headers: {'Content-Type':'application/json'}, body: JSON.stringify(cfg),
+      });
+      const data = await response.json();
+      if (!response.ok) { notify(data.detail || `Could not save local agent ${cfg.name}`, true); return; }
+    }
+    for (const old of (existingProject.project || [])) {
+      if (!desiredProjIds.has(old.id)) {
+        await fetch(`/agents/${old.id}`, {method: 'DELETE'});
+      }
+    }
+  }
+  
   const updated = await fetch('/agents').then(r=>r.json());
-  agentConfigs = updated.agents || [];
-  // Assign colors
-  agentConfigs.forEach(a => { if(!agentColors[a.name]) agentColors[a.name] = COLORS[colorIdx++ % COLORS.length]; });
+  const merged = updated.merged || [];
+  merged.forEach(a => { if(!agentColors[a.name]) agentColors[a.name] = COLORS[colorIdx++ % COLORS.length]; });
   fetchAgentStatus();
   notify(appStatus === 'needs_attention'
     ? 'Agent fix saved · retry the failed turn when ready'
-    : 'Agent team saved to this project');
+    : 'Agent team saved successfully');
   renderAgentCards();
 }
 

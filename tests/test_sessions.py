@@ -600,7 +600,7 @@ print('hello world')
                 self.assertTrue(data["ok"])
                 agent_id = data["agent"]["id"]
                 self.assertEqual(data["agent"]["name"], "Global Bot")
-                self.assertNotIn("is_coordinator", data["agent"]["extra"])
+                self.assertEqual(data["agent"]["extra"].get("is_coordinator"), True)
 
                 # Verify file on disk is encrypted
                 raw_file_content = backend.server.GLOBAL_AGENTS_PATH.read_text()
@@ -676,6 +676,67 @@ print('hello world')
             
             # Verify debate runs, but build phase is completely skipped
             self.assertGreater(len(boss.received), 0)
+
+    def test_global_plus_project_configs(self):
+        from fastapi.testclient import TestClient
+        import backend.server
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            orig_path = backend.server.GLOBAL_AGENTS_PATH
+            backend.server.GLOBAL_AGENTS_PATH = Path(tmpdir) / "global_agents.json"
+
+            try:
+                client = TestClient(backend.server.app)
+
+                # 1. Create a Global Agent
+                global_agent = {
+                    "name": "Standard Dev",
+                    "kind": "openai",
+                    "role": "developer",
+                    "model": "gpt-4o",
+                    "api_key": "global-secret",
+                    "system_prompt": "global system",
+                    "max_history_turns": 20,
+                    "extra": {}
+                }
+                res = client.post("/agents/global", json=global_agent)
+                self.assertEqual(res.status_code, 200)
+                global_id = res.json()["agent"]["id"]
+
+                # 2. Update Global Agent via PUT
+                global_agent["system_prompt"] = "updated global system"
+                res = client.put(f"/agents/global/{global_id}", json=global_agent)
+                self.assertEqual(res.status_code, 200)
+                self.assertEqual(res.json()["agent"]["system_prompt"], "updated global system")
+
+                # 3. Simulate opening a project with local configs
+                backend.server.state.open_project(tmpdir)
+                backend.server.state.configs = [{
+                    "id": "local-id",
+                    "name": "Standard Dev",  # Name collision!
+                    "kind": "openai",
+                    "role": "developer",
+                    "model": "gpt-4o-mini",
+                    "api_key": "local-secret",
+                    "system_prompt": "local override system",
+                    "max_history_turns": 20,
+                    "extra": {}
+                }]
+
+                # 4. GET /agents should list both and resolve merged correctly
+                res = client.get("/agents")
+                self.assertEqual(res.status_code, 200)
+                data = res.json()
+                self.assertEqual(len(data["global"]), 1)
+                self.assertEqual(len(data["project"]), 1)
+                self.assertEqual(len(data["merged"]), 1)
+
+                # Local override should win
+                self.assertEqual(data["merged"][0]["model"], "gpt-4o-mini")
+                self.assertEqual(data["merged"][0]["system_prompt"], "local override system")
+
+            finally:
+                backend.server.GLOBAL_AGENTS_PATH = orig_path
 
 
 if __name__ == "__main__":
