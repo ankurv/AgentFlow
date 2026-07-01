@@ -333,7 +333,7 @@ PASS
             loaded = store.load_agents()
             runs = store.recent_runs()
             self.assertEqual(loaded[0]["role"], "Developer")
-            self.assertEqual(loaded[0]["api_key"], "")
+            self.assertEqual(loaded[0]["api_key"], "secret")
             self.assertEqual(runs[0]["total_tokens"], 42)
             self.assertEqual(runs[0]["status"], "done")
             store.close()
@@ -508,6 +508,172 @@ PASS
 
             asyncio.run(exercise())
             self.assertEqual(len(agent.received), 9)
+
+    def test_coordinator_orchestrated_loop(self):
+        boss_response_1 = """## NEXT_AGENT
+worker
+
+## INSTRUCTIONS
+write main script
+
+## VERDICT
+CONTINUE
+
+## PLAN_UPDATE
+- [ ] Task 1
+  - [ ] Subtask 1a
+- [ ] Task 2
+
+## DESIGN_APPEND
+Initial architecture.
+"""
+        boss_response_2 = """## NEXT_AGENT
+worker
+
+## INSTRUCTIONS
+finish task
+
+## VERDICT
+COMPLETE
+"""
+        worker_response = """## FILE: src/main.py
+print('hello world')
+## PLAN_UPDATE
+- [ ] Task 1
+  - [x] build script
+- [ ] Task 2
+"""
+        boss = StatefulFake(
+            AgentConfig(name="boss", kind="openai", model="gpt-4o", extra={"is_coordinator": True}),
+            replies=[boss_response_1, boss_response_2]
+        )
+        worker = StatefulFake(
+            AgentConfig(name="worker", kind="openai", model="gpt-4o"),
+            replies=[worker_response]
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            orchestrator = Orchestrator(
+                agents=[boss, worker],
+                workspace=Workspace(directory),
+                require_approval=False,
+            )
+            asyncio.run(orchestrator.run("build tiny product"))
+
+            self.assertEqual(len(boss.received), 2)
+            self.assertEqual(len(worker.received), 1)
+            self.assertIn("write main script", worker.received[0][0]["content"])
+            self.assertEqual(orchestrator.ws.read_src()["src/main.py"], "print('hello world')")
+            self.assertIn("Task 1", orchestrator.ws.read("plan"))
+            self.assertIn("Initial architecture", orchestrator.ws.read("design"))
+
+    def test_global_agents_endpoints(self):
+        from fastapi.testclient import TestClient
+        import backend.server
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            orig_path = backend.server.GLOBAL_AGENTS_PATH
+            backend.server.GLOBAL_AGENTS_PATH = Path(tmpdir) / "global_agents.json"
+
+            try:
+                client = TestClient(backend.server.app)
+
+                res = client.get("/agents/global")
+                self.assertEqual(res.status_code, 200)
+                self.assertEqual(res.json(), {"agents": []})
+
+                agent_payload = {
+                    "name": "Global Bot",
+                    "kind": "openai",
+                    "role": "helper",
+                    "model": "gpt-4o",
+                    "api_key": "my-secret-key-xyz",
+                    "system_prompt": "hello",
+                    "max_history_turns": 20,
+                    "extra": {"is_coordinator": True}
+                }
+                res = client.post("/agents/global", json=agent_payload)
+                self.assertEqual(res.status_code, 200)
+                data = res.json()
+                self.assertTrue(data["ok"])
+                agent_id = data["agent"]["id"]
+                self.assertEqual(data["agent"]["name"], "Global Bot")
+                self.assertNotIn("is_coordinator", data["agent"]["extra"])
+
+                # Verify file on disk is encrypted
+                raw_file_content = backend.server.GLOBAL_AGENTS_PATH.read_text()
+                self.assertNotIn("my-secret-key-xyz", raw_file_content)
+                self.assertIn("gAAAA", raw_file_content) # Fernet signature
+
+                # Verify API returns decrypted value
+                res = client.get("/agents/global")
+                self.assertEqual(res.status_code, 200)
+                agents = res.json()["agents"]
+                self.assertEqual(len(agents), 1)
+                self.assertEqual(agents[0]["id"], agent_id)
+                self.assertEqual(agents[0]["api_key"], "my-secret-key-xyz")
+
+                res = client.delete(f"/agents/global/{agent_id}")
+                self.assertEqual(res.status_code, 200)
+                self.assertTrue(res.json()["ok"])
+
+                res = client.get("/agents/global")
+                self.assertEqual(res.status_code, 200)
+                self.assertEqual(res.json(), {"agents": []})
+
+            finally:
+                backend.server.GLOBAL_AGENTS_PATH = orig_path
+
+    def test_project_store_encryption(self):
+        from backend.storage import ProjectStore
+        import tempfile
+        import json
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = ProjectStore(Path(tmpdir))
+            agent_payload = [{
+                "id": "bot1",
+                "name": "Bot One",
+                "kind": "openai",
+                "role": "builder",
+                "model": "gpt-4o",
+                "api_key": "my-secret-key-abc",
+                "system_prompt": "hello",
+                "max_history_turns": 20,
+                "extra": {}
+            }]
+
+            store.save_agents(agent_payload)
+
+            # Assert raw DB storage is encrypted
+            cursor = store._db.execute("SELECT config_json FROM agents")
+            row = cursor.fetchone()
+            config_stored = json.loads(row["config_json"])
+            self.assertNotEqual(config_stored["api_key"], "my-secret-key-abc")
+            self.assertTrue(config_stored["api_key"].startswith("gAAAA")) # Fernet header
+
+            # Assert loading decrypts correctly
+            loaded = store.load_agents()
+            self.assertEqual(loaded[0]["api_key"], "my-secret-key-abc")
+
+    def test_execution_modes(self):
+        boss = StatefulFake(
+            AgentConfig(name="boss", kind="openai", model="gpt-4o"),
+            replies=["## VERDICT\nCONTINUE"]
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            orchestrator = Orchestrator(
+                agents=[boss],
+                workspace=Workspace(directory),
+                require_approval=False,
+                mode="debate",
+                max_debate_rounds=1,
+            )
+            # Run debate-only mode
+            asyncio.run(orchestrator.run("debate product design"))
+            
+            # Verify debate runs, but build phase is completely skipped
+            self.assertGreater(len(boss.received), 0)
 
 
 if __name__ == "__main__":

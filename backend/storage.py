@@ -8,6 +8,8 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .crypto import encrypt_key, decrypt_key
+
 
 class ProjectStore:
     def __init__(self, metadata_dir: Path):
@@ -76,7 +78,7 @@ class ProjectStore:
         for row in rows:
             config = json.loads(row["config_json"])
             config["id"] = row["id"]
-            config["api_key"] = ""
+            config["api_key"] = decrypt_key(config.get("api_key", ""))
             configs.append(config)
         return configs
 
@@ -86,8 +88,8 @@ class ProjectStore:
             for index, original in enumerate(configs):
                 config = dict(original)
                 agent_id = config.pop("id")
-                # Never write API credentials into a project-local database.
-                config["api_key"] = ""
+                # Encrypt API credentials into a project-local database.
+                config["api_key"] = encrypt_key(config.get("api_key", ""))
                 self._db.execute(
                     "INSERT INTO agents(id, sort_order, config_json) VALUES (?, ?, ?)",
                     (agent_id, index, json.dumps(config)),

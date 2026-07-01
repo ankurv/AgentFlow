@@ -89,6 +89,42 @@
                  overflow: hidden; margin-top: 6px; }
   .usage-fill { height: 100%; border-radius: 3px; transition: width .25s ease; }
 
+  /* ── Progress Pane ── */
+  .progress-pane {
+    width: 320px;
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    padding: 16px;
+    background: var(--bg2);
+    overflow-y: auto;
+  }
+  .progress-metrics {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .metric-card {
+    flex: 1;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px;
+    text-align: center;
+  }
+  .metric-val {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--accent2);
+  }
+  .metric-lbl {
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 2px;
+    text-transform: uppercase;
+  }
+
   .idea-form { padding: 16px; border-bottom: 1px solid var(--border); }
   .idea-form textarea { width: 100%; background: var(--bg3); border: 1px solid var(--border2);
                         color: var(--text); border-radius: var(--radius); padding: 10px;
@@ -252,6 +288,14 @@
         <div class="idea-form">
           <div class="sidebar-label">Project brief</div>
           <textarea id="ideaInput" placeholder="Optional when the project contains AGENTFLOW.md"></textarea>
+          <div style="margin-bottom:10px">
+            <label style="font-size:11px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Execution Mode</label>
+            <select id="runModeSelect" style="padding:6px;font-size:12px;border-radius:var(--radius);background:var(--bg3);border:1px solid var(--border);color:var(--text);width:100%;outline:none">
+              <option value="all">Full (Debate + Build)</option>
+              <option value="debate">Debate/Design Only</option>
+              <option value="build">Build/Implementation Only</option>
+            </select>
+          </div>
           <div class="brief-tools">
             <button class="btn btn-primary" id="startBtn" onclick="startRun()">Start run</button>
             <button class="btn btn-secondary" onclick="saveBrief()">Save AGENTFLOW.md</button>
@@ -274,6 +318,27 @@
         <div class="steer-bar">
           <input id="steerInput" placeholder="Steer agents — inject a message into the active run…" onkeydown="if(event.key==='Enter')steer()">
           <button class="btn btn-secondary" onclick="steer()">Send</button>
+        </div>
+      </div>
+      <div class="progress-pane" id="progressPane">
+        <div class="sidebar-label" style="margin-bottom:8px">Execution Status</div>
+        <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:10px;margin-bottom:12px;display:flex;align-items:center;gap:8px">
+          <div id="progressStatusDot" style="width:8px;height:8px;border-radius:50%;background:var(--muted)"></div>
+          <div id="progressStatusText" style="font-size:12px;font-weight:600;color:var(--text)">Idle</div>
+        </div>
+        <div class="progress-metrics">
+          <div class="metric-card">
+            <div class="metric-val" id="progressTokens">0</div>
+            <div class="metric-lbl">Total Tokens</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-val" id="progressCost">$0.000000</div>
+            <div class="metric-lbl">Estimated Cost</div>
+          </div>
+        </div>
+        <div class="sidebar-label" style="margin-top:16px;margin-bottom:8px">Tasks & Progress</div>
+        <div class="progress-tasks-list" id="progressTaskList" style="display:flex;flex-direction:column;gap:8px">
+          <div style="color:var(--muted);font-size:12px">No tasks defined in PLAN.md yet.</div>
         </div>
       </div>
     </div>
@@ -304,7 +369,16 @@
       <h2>Agent Configuration</h2>
       <p class="muted-note">Saved inside this project. API keys remain in memory only and are never written to SQLite. Duplicate a CLI agent to give each named role an independent conversation.</p>
       <div class="agent-cards" id="agentCards"></div>
-      <button class="add-agent-btn" onclick="addAgentCard()">＋ Add agent</button>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:16px;flex-wrap:wrap">
+        <button class="add-agent-btn" onclick="addAgentCard()" style="margin:0">＋ Add blank agent</button>
+        <div id="globalImportContainer" style="display:flex;align-items:center;gap:6px;background:var(--bg3);padding:6px;border-radius:var(--radius);border:1px solid var(--border)">
+          <select id="globalAgentSelect" style="padding:4px;font-size:12px;border-radius:var(--radius);background:var(--bg2);color:var(--text);border:1px solid var(--border2);outline:none">
+            <option value="">Choose a template...</option>
+          </select>
+          <button class="btn btn-secondary" onclick="importGlobalAgent()" style="padding:4px 10px;font-size:11px">Import Template</button>
+          <button class="btn btn-danger" onclick="deleteGlobalTemplate()" style="padding:4px 8px;font-size:11px" title="Delete selected template">✕</button>
+        </div>
+      </div>
       <div style="margin-top:16px">
         <button class="btn btn-primary" onclick="saveAgents()">Save agents</button>
       </div>
@@ -432,6 +506,9 @@ function handleEvent(ev) {
   if (ev.kind === 'turn_start' || ev.kind === 'turn_end' || ev.kind === 'retry' || ev.kind === 'error') {
     fetchAgentStatus();
   }
+  if (ev.kind === 'file_write' && ev.data.file === 'PLAN.md') {
+    refreshPlanProgress();
+  }
 }
 
 function appendFeed(ev) {
@@ -536,6 +613,9 @@ async function startRun() {
   document.getElementById('totalTokens').textContent = '0';
   document.getElementById('totalCachedTokens').textContent = '0';
   document.getElementById('totalCost').textContent = '$0.000000';
+  document.getElementById('progressTokens').textContent = '0';
+  document.getElementById('progressCost').textContent = '$0.000000';
+  document.getElementById('progressTaskList').innerHTML = '<div style="color:var(--muted);font-size:12px">Planning task list...</div>';
   document.getElementById('eventCount').textContent = '0';
   document.getElementById('feed').innerHTML = '';
 
@@ -547,6 +627,7 @@ async function startRun() {
       project_path: currentProjectPath,
       max_debate_rounds: parseInt(document.getElementById('debateRounds').value) || 4,
       max_build_iterations: parseInt(document.getElementById('buildIters').value) || 3,
+      mode: document.getElementById('runModeSelect').value,
     })
   });
   const data = await res.json();
@@ -614,6 +695,23 @@ function updateStatus(s) {
   const retryBtn = document.getElementById('retryBtn');
   dot.className = `status-dot ${s}`;
   txt.textContent = s;
+
+  // Sync to progress pane status banner
+  const pDot = document.getElementById('progressStatusDot');
+  const pTxt = document.getElementById('progressStatusText');
+  if (pDot && pTxt) {
+    const color = {
+      idle: 'var(--muted, #8e9cae)',
+      running: 'var(--yellow, #eab308)',
+      paused: 'var(--yellow, #eab308)',
+      needs_attention: 'var(--red, #ef4444)',
+      done: 'var(--green, #22c55e)',
+      error: 'var(--red, #ef4444)'
+    }[s] || 'var(--muted, #8e9cae)';
+    pDot.style.background = color;
+    pTxt.textContent = s.charAt(0).toUpperCase() + s.slice(1).replace('_', ' ');
+  }
+
   const running = s === 'running' || s === 'paused' || s === 'needs_attention';
   retryBtn.style.display = s === 'needs_attention' ? '' : 'none';
   pauseBtn.style.display = (s === 'running' || s === 'paused') ? '' : 'none';
@@ -667,9 +765,13 @@ async function fetchAgentStatus() {
   const hasUnreportedCache = (res.agents || []).some(a => a.cache_reporting === 'unavailable');
   totalCost = (res.agents || []).reduce((sum, a) => sum + (a.cost_usd || 0), 0);
   const allKnown = (res.agents || []).every(a => a.pricing_known);
+  const costText = allKnown ? formatCost(totalCost) : `${formatCost(totalCost)} + unpriced`;
   document.getElementById('totalTokens').textContent = totalTokens.toLocaleString();
   document.getElementById('totalCachedTokens').textContent = cached.toLocaleString() + (hasUnreportedCache ? ' + unreported' : '');
-  document.getElementById('totalCost').textContent = allKnown ? formatCost(totalCost) : `${formatCost(totalCost)} + unpriced`;
+  document.getElementById('totalCost').textContent = costText;
+
+  document.getElementById('progressTokens').textContent = totalTokens.toLocaleString();
+  document.getElementById('progressCost').textContent = costText;
 }
 
 function formatCost(value) {
@@ -682,7 +784,50 @@ function clearFeed() {
   document.getElementById('totalTokens').textContent = '0';
   document.getElementById('totalCachedTokens').textContent = '0';
   document.getElementById('totalCost').textContent = '$0.000000';
+  document.getElementById('progressTokens').textContent = '0';
+  document.getElementById('progressCost').textContent = '$0.000000';
+  document.getElementById('progressTaskList').innerHTML = '<div style="color:var(--muted);font-size:12px">No tasks defined in PLAN.md yet.</div>';
   document.getElementById('eventCount').textContent = '0';
+}
+
+async function refreshPlanProgress() {
+  try {
+    const res = await fetch('/workspace/file/plan').then(r=>r.json());
+    if (res && res.content) {
+      renderPlanProgress(res.content);
+    }
+  } catch (err) {
+    console.error("Failed to load plan progress", err);
+  }
+}
+
+function renderPlanProgress(markdown) {
+  const container = document.getElementById('progressTaskList');
+  if (!container) return;
+  const lines = markdown.split('\n');
+  let html = '';
+  lines.forEach(line => {
+    const match = line.match(/^(\s*)-\s*\[([ xX])\]\s*(.*)$/);
+    if (match) {
+      const indent = match[1].length;
+      const checked = match[2].toLowerCase() === 'x';
+      const text = match[3].trim();
+      const marginLeft = indent * 8;
+      const style = checked ? 'text-decoration:line-through;opacity:0.6;' : '';
+      const checkIcon = checked ? '✓' : '○';
+      html += `
+        <div style="display:flex;align-items:flex-start;gap:6px;margin-left:${marginLeft}px;margin-top:4px;font-size:12px;${style}">
+          <span style="font-weight:bold;color:${checked ? 'var(--green, #22c55e)' : 'var(--muted, #8e9cae)'}">${checkIcon}</span>
+          <span>${escHtml(text)}</span>
+        </div>
+      `;
+    }
+  });
+  if (!html) {
+    container.innerHTML = '<div style="color:var(--muted);font-size:12px">No tasks defined in PLAN.md yet.</div>';
+  } else {
+    container.innerHTML = html;
+  }
 }
 
 // ── Workspace ─────────────────────────────────────────────────────────────────
@@ -714,6 +859,7 @@ async function refreshWorkspace() {
   ).join('');
   // Reload current file
   await loadWsFile(currentWsKey);
+  refreshPlanProgress();
 }
 
 async function loadRunHistory() {
@@ -744,6 +890,7 @@ async function loadAgentConfig() {
   const res = await fetch('/agents').then(r=>r.json());
   agentConfigs = res.agents || [];
   renderAgentCards();
+  await loadGlobalTemplates();
 }
 
 function renderAgentCards() {
@@ -755,6 +902,7 @@ function renderAgentCards() {
           ${escHtml(cfg.name)}
         </div>
         <span class="agent-card-kind">${cfg.kind}</span>
+        <button class="btn btn-secondary" onclick="saveAsGlobalTemplate(${i})" style="padding:3px 8px;font-size:11px">Save as Template</button>
         <button class="btn btn-secondary" onclick="duplicateAgent(${i})" style="padding:3px 8px;font-size:11px">Duplicate</button>
         <button class="btn btn-danger" onclick="removeAgent(${i})" style="padding:3px 8px;font-size:11px">Remove</button>
       </div>
@@ -768,6 +916,10 @@ function renderAgentCards() {
           <select onchange="agentConfigs[${i}].kind=this.value;renderAgentCards()">
             ${KINDS.map(k=>`<option value="${k}" ${k===cfg.kind?'selected':''}>${k}</option>`).join('')}
           </select>
+        </div>
+        <div class="form-group full" style="display:flex;align-items:center;gap:6px;margin:2px 0">
+          <input type="checkbox" id="coordinator-${i}" ${cfg.extra?.is_coordinator ? 'checked' : ''} onchange="toggleCoordinator(${i}, this.checked)" style="width:auto;margin:0">
+          <label for="coordinator-${i}" style="margin:0;cursor:pointer;font-size:12px;font-weight:600">Designate as Team Coordinator</label>
         </div>
         <div class="form-group">
           <label>Standing role</label>
@@ -848,6 +1000,18 @@ function setExtraNumber(i, key, value) {
   agentConfigs[i].extra = extra;
 }
 
+function toggleCoordinator(idx, checked) {
+  agentConfigs.forEach((cfg, i) => {
+    if (!cfg.extra) cfg.extra = {};
+    if (i === idx) {
+      cfg.extra.is_coordinator = checked;
+    } else if (checked) {
+      cfg.extra.is_coordinator = false;
+    }
+  });
+  renderAgentCards();
+}
+
 function addAgentCard() {
   agentConfigs.push({id: 'new-'+Date.now(), name:'Agent '+(agentConfigs.length+1), role:'', kind:'claude', model:'', api_key:'', system_prompt:'', max_history_turns:20, extra:{}});
   renderAgentCards();
@@ -867,6 +1031,92 @@ function duplicateAgent(i) {
 function removeAgent(i) {
   agentConfigs.splice(i, 1);
   renderAgentCards();
+}
+
+let globalTemplates = [];
+
+async function loadGlobalTemplates() {
+  try {
+    const res = await fetch('/agents/global').then(r=>r.json());
+    globalTemplates = res.agents || [];
+    const select = document.getElementById('globalAgentSelect');
+    if (select) {
+      select.innerHTML = '<option value="">Choose a template...</option>' +
+        globalTemplates.map(t => `<option value="${t.id}">${escHtml(t.name)} (${escHtml(t.role || t.kind)})</option>`).join('');
+    }
+  } catch (err) {
+    console.error('Failed to load global templates', err);
+  }
+}
+
+async function saveAsGlobalTemplate(idx) {
+  const local = agentConfigs[idx];
+  if (!local) return;
+  try {
+    const res = await fetch('/agents/global', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        name: local.name,
+        kind: local.kind,
+        role: local.role,
+        model: local.model,
+        api_key: local.api_key || '',
+        system_prompt: local.system_prompt || '',
+        max_history_turns: local.max_history_turns || 20,
+        extra: local.extra || {}
+      })
+    }).then(r=>r.json());
+    if (res.ok) {
+      notify(`Saved ${local.name} as a global template`);
+      await loadGlobalTemplates();
+    } else {
+      notify('Failed to save template', true);
+    }
+  } catch (err) {
+    notify('Failed to save template: ' + err, true);
+  }
+}
+
+async function importGlobalAgent() {
+  const select = document.getElementById('globalAgentSelect');
+  if (!select) return;
+  const templateId = select.value;
+  if (!templateId) { notify('Select a template to import', true); return; }
+  const template = globalTemplates.find(t => t.id === templateId);
+  if (!template) return;
+
+  const freshCopy = {
+    ...template,
+    id: 'new-' + Date.now(),
+    api_key: template.api_key || '',
+    extra: {...(template.extra || {})}
+  };
+  agentConfigs.push(freshCopy);
+  renderAgentCards();
+  select.value = '';
+  notify(`Imported template ${template.name}`);
+}
+
+async function deleteGlobalTemplate() {
+  const select = document.getElementById('globalAgentSelect');
+  if (!select) return;
+  const templateId = select.value;
+  if (!templateId) { notify('Select a template to delete', true); return; }
+  const template = globalTemplates.find(t => t.id === templateId);
+  if (!template) return;
+  if (!confirm(`Are you sure you want to delete the template "${template.name}"?`)) return;
+  try {
+    const res = await fetch(`/agents/global/${templateId}`, {method: 'DELETE'}).then(r=>r.json());
+    if (res.ok) {
+      notify(`Deleted template "${template.name}"`);
+      await loadGlobalTemplates();
+    } else {
+      notify('Failed to delete template', true);
+    }
+  } catch (err) {
+    notify('Failed to delete template: ' + err, true);
+  }
 }
 
 async function saveAgents() {

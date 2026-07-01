@@ -19,6 +19,7 @@ from .agents.providers import AGENT_KINDS, create_agent
 from .orchestrator import Event, EventKind, Orchestrator
 from .storage import ProjectStore
 from .workspace.workspace import Workspace
+from .crypto import encrypt_key, decrypt_key
 
 app = FastAPI(title="AgentFlow", version="1.1.0")
 app.add_middleware(
@@ -62,6 +63,30 @@ class AppState:
 
 
 state = AppState()
+
+GLOBAL_AGENTS_PATH = Path.home() / ".agentflow" / "global_agents.json"
+
+def load_global_agents() -> list[dict]:
+    GLOBAL_AGENTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if not GLOBAL_AGENTS_PATH.exists():
+        return []
+    try:
+        configs = json.loads(GLOBAL_AGENTS_PATH.read_text())
+        for c in configs:
+            c["api_key"] = decrypt_key(c.get("api_key", ""))
+        return configs
+    except Exception:
+        return []
+
+def save_global_agents(configs: list[dict]):
+    GLOBAL_AGENTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    configs_copy = []
+    for original in configs:
+        c = dict(original)
+        c["api_key"] = encrypt_key(c.get("api_key", ""))
+        configs_copy.append(c)
+    GLOBAL_AGENTS_PATH.write_text(json.dumps(configs_copy, indent=2))
+
 
 
 def broadcast(event: Event):
@@ -235,12 +260,39 @@ def delete_agent(agent_id: str):
     return {"ok": True}
 
 
+@app.get("/agents/global")
+def list_global_agents():
+    return {"agents": load_global_agents()}
+
+
+@app.post("/agents/global")
+def add_global_agent(body: AgentConfigIn):
+    configs = load_global_agents()
+    config = body.model_dump()
+    config["id"] = str(uuid.uuid4())[:8]
+    # Clean is_coordinator and session state from templates
+    if "extra" in config and config["extra"]:
+        config["extra"] = {k: v for k, v in config["extra"].items() if k != "is_coordinator"}
+    configs.append(config)
+    save_global_agents(configs)
+    return {"ok": True, "agent": config}
+
+
+@app.delete("/agents/global/{agent_id}")
+def delete_global_agent(agent_id: str):
+    configs = load_global_agents()
+    configs = [c for c in configs if c["id"] != agent_id]
+    save_global_agents(configs)
+    return {"ok": True}
+
+
 class StartBody(BaseModel):
     idea: str = ""
     project_path: str = ""
     save_brief: bool = False
     max_debate_rounds: int = 6
     max_build_iterations: int = 5
+    mode: str = "all"
 
 
 @app.post("/run/start")
@@ -289,6 +341,7 @@ async def start_run(body: StartBody):
         max_debate_rounds=body.max_debate_rounds,
         max_build_iterations=body.max_build_iterations,
         require_approval=True,
+        mode=body.mode,
     )
 
     async def run_and_update():

@@ -129,6 +129,47 @@ ROLE_NEEDS = {
     "tester":    ["plan", "src", "tests"],
 }
 
+COORDINATOR_SYSTEM = """You are the COORDINATOR of an autonomous software engineering team.
+Your goal is to coordinate the team's agents to design, build, review, and test a software product based on the user's idea.
+
+Current execution mode: {mode}
+
+Depending on the mode, follow these structured instructions:
+- **all**: Run Phase 1 (Planning & Design reviews), wait/pause for user review, and then proceed to Phase 2 (Task-by-task execution).
+- **debate**: Focus ONLY on Phase 1 (High-Level Planning & Design reviews). Once the plans/designs are refined and reviewed, state VERDICT as COMPLETE. Do not proceed to Phase 2.
+- **build**: Skip Phase 1 and jump directly to Phase 2 (Task-by-task execution) based on the tasks already listed in PLAN.md.
+
+Structured workflow description:
+1. **Phase 1 (High-Level Planning & Design)**:
+   - First, design a high-level task list (ideally with subtasks) and write it in PLAN.md. 
+   - Define the initial design concept in DESIGN.md.
+   - Call other agents (by setting ## NEXT_AGENT) to review, critique, and improve this high-level task list and design.
+   - Once other agents have reviewed, present the plan/design to the human user for review by outputting the next worker or pausing.
+2. **Phase 2 (Task-by-task Debate & Execution)**:
+   - Select the first pending task/subtask from PLAN.md.
+   - Further debate this specific task/subtask. Prompt agents to create detailed design and specifications in ImplementationPlan.md.
+   - Execute the task: call the developer to write code, call the reviewer to check, and call the tester to verify.
+   - Once the task is completed and verified, check it off in PLAN.md with [x].
+   - Repeat for each task/subtask in PLAN.md until all tasks are checked off.
+
+Available agents in the team:
+{agents_list}
+
+Read the current workspace files carefully and decide what should happen next.
+To run an agent, output their name under ## NEXT_AGENT and specify what they should do under ## INSTRUCTIONS.
+If you believe the design and implementation are fully complete, correct, and verified, output COMPLETE under ## VERDICT.
+
+Respond in this exact format:
+
+## NEXT_AGENT
+<exact name of the agent to run next>
+
+## INSTRUCTIONS
+<specific instructions or guidance for this agent's turn>
+
+## VERDICT
+<CONTINUE or COMPLETE>"""
+
 
 # ─── Orchestrator ─────────────────────────────────────────────────────────────
 
@@ -141,6 +182,7 @@ class Orchestrator:
         max_debate_rounds: int = 6,
         max_build_iterations: int = 5,
         require_approval: bool = True,
+        mode: str = "all",
     ):
         self.agents = agents
         self.ws = workspace
@@ -148,6 +190,7 @@ class Orchestrator:
         self.max_debate_rounds = max_debate_rounds
         self.max_build_iterations = max_build_iterations
         self.require_approval = require_approval
+        self.mode = mode
 
         # Steering controls
         self._paused = False
@@ -198,31 +241,45 @@ class Orchestrator:
     async def run(self, idea: str):
         self._running = True
         self.idea = idea
-        self.ws.init(idea)
+        
+        # Only initialize workspace files if design doesn't exist yet, OR if a fresh idea is provided and mode is not build
+        design_file = self.ws._file("design")
+        if not design_file.exists() or (idea.strip() and self.mode != "build"):
+            self.ws.init(idea)
+            
         n = len(self.agents)
 
-        while self._running:
-            # The first useful turn carries the seed. This avoids one full model
-            # generation per agent whose only purpose used to be "wait".
-            await self._debate_phase(n)
-            if not self._running:
-                return
+        coordinator = next((a for a in self.agents if a.config.extra.get("is_coordinator")), None)
+        if coordinator:
+            await self._coordinator_loop(coordinator)
+            return self.ws.snapshot()
 
-            if self.require_approval:
-                self.pause()
-                self._emit(Event(EventKind.PHASE, data={"phase": "debate", "status": "waiting_for_approval"}))
-                await self._wait_if_paused()
+        # If mode is "all" or "debate", run debate phase
+        if self.mode in {"all", "debate"}:
+            while self._running:
+                # The first useful turn carries the seed. This avoids one full model
+                # generation per agent whose only purpose used to be "wait".
+                await self._debate_phase(n)
                 if not self._running:
                     return
 
-                if not self._steer_queue.empty():
-                    self._emit(Event(EventKind.PHASE, data={"phase": "debate", "status": "continuing_debate"}))
-                    continue
+                if self.require_approval:
+                    self.pause()
+                    self._emit(Event(EventKind.PHASE, data={"phase": "debate", "status": "waiting_for_approval"}))
+                    await self._wait_if_paused()
+                    if not self._running:
+                        return
 
-            break
+                    if not self._steer_queue.empty():
+                        self._emit(Event(EventKind.PHASE, data={"phase": "debate", "status": "continuing_debate"}))
+                        continue
 
-        if self._running:
+                break
+
+        # If mode is "all" or "build", run build phase
+        if self._running and self.mode in {"all", "build"}:
             await self._build_phase()
+            
         return self.ws.snapshot()
 
     # ── Debate phase ──────────────────────────────────────────────────────────
@@ -249,14 +306,14 @@ class Orchestrator:
                     else:
                         steering_accumulated = new_steering
 
-                delta = self.ws.changed_context(agent.name)
+                full_ctx = self.ws.full_context()
                 steer_block = f"\n\n[HUMAN STEERING]\n{steering_accumulated}" if steering_accumulated else ""
                 seed_block = f"\n\nProduct idea: {self.idea}" if round_num == 1 else ""
                 prompt = (
                     f"{DEBATE_SYSTEM.format(n=len(self.agents))}"
                     f"{seed_block}\n\n"
                     f"Debate round {round_num}/{self.max_debate_rounds}.\n\n"
-                    f"Changes since your last turn:\n{delta}{steer_block}\n\n"
+                    f"Current Workspace snapshot:\n{full_ctx}{steer_block}\n\n"
                     "Add your contributions now."
                 )
 
@@ -356,12 +413,12 @@ class Orchestrator:
                     else:
                         steering_accumulated = new_steering
 
-                delta = self.ws.changed_context(agent.name, ROLE_NEEDS[role])
+                full_ctx = self.ws.full_context()
                 steer_block = f"\n\n[HUMAN STEERING]\n{steering_accumulated}" if steering_accumulated else ""
                 prompt = (
                     "Debate is complete; continue in the BUILD phase.\n"
                     f"Build iteration {iteration}. Your role: {role.upper()}.\n\n"
-                    f"Workspace changes relevant to you:\n{delta}{steer_block}\n\n"
+                    f"Current Workspace snapshot:\n{full_ctx}{steer_block}\n\n"
                     f"{BUILD_SYSTEMS[role]}"
                 )
 
@@ -577,3 +634,120 @@ class Orchestrator:
         while not self._steer_queue.empty():
             msgs.append(await self._steer_queue.get())
         return "\n".join(msgs)
+
+    async def _coordinator_loop(self, coordinator: AgentBase):
+        other_agents = [a for a in self.agents if a.name != coordinator.name]
+        agents_list = "\n".join(f"- {a.name}: {a.config.role or 'Contributor'}" for a in other_agents)
+        system_prompt = COORDINATOR_SYSTEM.format(agents_list=agents_list, mode=self.mode)
+
+        orig_system = coordinator.config.system_prompt
+        coordinator.config.system_prompt = system_prompt
+
+        max_steps = 30
+        for step in range(1, max_steps + 1):
+            await self._wait_if_paused()
+            if not self._running:
+                break
+
+            # 1. Call Coordinator
+            delta = self.ws.snapshot()
+            new_steering = await self._drain_steer()
+            steer_block = f"\n\n[HUMAN STEERING]\n{new_steering}" if new_steering else ""
+            seed_block = f"\n\nProduct idea: {self.idea}" if step == 1 else ""
+
+            prompt = (
+                f"Coordinator execution step {step}/{max_steps}.\n"
+                f"Current Workspace snapshot:\n{delta}{steer_block}{seed_block}\n\n"
+                "Determine the NEXT_AGENT to run, provide INSTRUCTIONS, and state the VERDICT (CONTINUE or COMPLETE)."
+            )
+
+            turn_context = {"step": step, "phase": "coordinator", "standing_role": coordinator.config.role}
+            turn_id = self._begin_turn(coordinator, turn_context)
+
+            response = await self._send_agent(coordinator, prompt, turn_id, turn_context)
+
+            # Apply coordinator's own plan/design updates or file writes
+            self._apply_coordinator_agent_response(coordinator.name, response)
+
+            self._emit(Event(EventKind.TURN_END, agent=coordinator.name, data={
+                "turn_id": turn_id, "attempt": self._turn_attempts[turn_id],
+                "step": step, "response": response,
+                **self._usage_event(coordinator),
+            }))
+
+            next_agent_name, instructions, verdict = self._parse_coordinator_response(response)
+
+            if verdict == "COMPLETE":
+                self._emit(Event(EventKind.PHASE, data={
+                    "phase": "coordinator", "status": "complete", "step": step
+                }))
+                break
+
+            # Find selected agent
+            selected_agent = next((a for a in other_agents if a.name.lower() == next_agent_name.lower()), None)
+            if not selected_agent:
+                error_msg = f"Coordinator selected invalid agent: '{next_agent_name}'"
+                self._emit(Event(EventKind.ERROR, agent=coordinator.name, data={"error": error_msg}))
+                if other_agents:
+                    selected_agent = other_agents[0]
+                else:
+                    break
+
+            # 2. Call selected agent
+            agent_full_ctx = self.ws.full_context()
+            agent_prompt = (
+                f"Coordinator Instructions:\n{instructions}\n\n"
+                f"Current Workspace snapshot:\n{agent_full_ctx}\n\n"
+                f"Please execute your turn now."
+            )
+
+            agent_turn_context = {"step": step, "phase": "coordinator_agent", "standing_role": selected_agent.config.role}
+            agent_turn_id = self._begin_turn(selected_agent, agent_turn_context)
+
+            agent_response = await self._send_agent(selected_agent, agent_prompt, agent_turn_id, agent_turn_context)
+
+            self._apply_coordinator_agent_response(selected_agent.name, agent_response)
+
+            self._emit(Event(EventKind.TURN_END, agent=selected_agent.name, data={
+                "turn_id": agent_turn_id, "attempt": self._turn_attempts[agent_turn_id],
+                "step": step, "response": agent_response,
+                **self._usage_event(selected_agent),
+            }))
+
+            # Pause after each step if we require approval
+            if self.require_approval and step < max_steps:
+                self.pause()
+                self._emit(Event(EventKind.PHASE, data={
+                    "phase": "coordinator", "step": step,
+                    "status": "waiting_for_continuation"
+                }))
+                await self._wait_if_paused()
+                if not self._running:
+                    break
+
+        coordinator.config.system_prompt = orig_system
+
+    def _parse_coordinator_response(self, response: str) -> tuple[str, str, str]:
+        next_agent = self.ws.parse_section(response, "NEXT_AGENT").strip()
+        instructions = self.ws.parse_section(response, "INSTRUCTIONS").strip()
+        verdict = self.ws.parse_section(response, "VERDICT").strip().upper()
+        return next_agent, instructions, verdict
+
+    def _apply_coordinator_agent_response(self, agent_name: str, response: str):
+        for filename, content in self.ws.parse_files(response).items():
+            self.ws.write_src(filename, content)
+            self._emit(Event(EventKind.FILE_WRITE, agent=agent_name,
+                             data={"file": filename, "preview": content[:120]}))
+
+        plan_update = self.ws.parse_section(response, "PLAN_UPDATE")
+        if plan_update:
+            self.ws.write("plan", f"# Plan\n\n{plan_update}")
+            self._emit(Event(EventKind.FILE_WRITE, agent=agent_name, data={"file": "PLAN.md"}))
+
+        design_bit = self.ws.parse_section(response, "DESIGN_APPEND")
+        if design_bit:
+            self.ws.append("design", design_bit, agent_name, "Coordinator-led Turn")
+
+        test_bit = self.ws.parse_section(response, "TEST_RESULTS_APPEND")
+        if test_bit:
+            self.ws.append("tests", test_bit, agent_name, "Coordinator-led Turn")
