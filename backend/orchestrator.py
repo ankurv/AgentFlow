@@ -254,9 +254,10 @@ class Orchestrator:
         self._running = True
         self.idea = idea
         
-        # Only initialize workspace files if design doesn't exist yet, OR if a fresh idea is provided and mode is not build
+        # Only initialize workspace files if design doesn't exist yet or is empty.
+        # We never overwrite existing design/plan docs, so the agents can preserve context across server restarts.
         design_file = self.ws._file("design")
-        if not design_file.exists() or (idea.strip() and self.mode != "build"):
+        if not design_file.exists() or design_file.stat().st_size == 0:
             self.ws.init(idea)
             
         n = len(self.agents)
