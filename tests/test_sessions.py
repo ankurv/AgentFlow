@@ -677,6 +677,40 @@ print('hello world')
             # Verify debate runs, but build phase is completely skipped
             self.assertGreater(len(boss.received), 0)
 
+    def test_coordinator_pause_for_input(self):
+        boss = StatefulFake(
+            AgentConfig(name="boss", kind="openai", model="gpt-4o"),
+            replies=[
+                "## NEXT_AGENT\nUSER\n## INSTRUCTIONS\nWhich db?\n## VERDICT\nPAUSE_FOR_INPUT",
+                "## NEXT_AGENT\nboss\n## INSTRUCTIONS\nFinished db question\n## VERDICT\nCOMPLETE"
+            ]
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            orchestrator = Orchestrator(
+                agents=[boss],
+                workspace=Workspace(directory),
+                require_approval=False,
+                mode="all",
+                max_debate_rounds=1,
+            )
+            
+            async def run_test():
+                run_task = asyncio.create_task(orchestrator.run("discuss product design"))
+                await asyncio.sleep(0.05)
+                self.assertTrue(orchestrator._paused)
+                
+                # Steer the coordinator with user response
+                await orchestrator.steer("We want SQLite")
+                orchestrator.resume()
+                
+                # Wait for task to finish
+                await run_task
+                
+                # Check that step 2 received the steering response!
+                self.assertIn("We want SQLite", boss.received[-1][-1]["content"])
+            
+            asyncio.run(run_test())
+
     def test_global_plus_project_configs(self):
         from fastapi.testclient import TestClient
         import backend.server
@@ -745,6 +779,57 @@ print('hello world')
 
             finally:
                 backend.server.GLOBAL_AGENTS_PATH = orig_path
+
+    def test_agent_probe_endpoint(self):
+        from fastapi.testclient import TestClient
+        import backend.server
+        from unittest.mock import patch, MagicMock
+
+        client = TestClient(backend.server.app)
+        with patch("backend.server.create_agent") as mock_create:
+            mock_agent = MagicMock()
+            mock_agent.send.return_value = "ok"
+            mock_create.return_value = mock_agent
+
+            agent_payload = {
+                "name": "Test Probe",
+                "kind": "openai",
+                "role": "helper",
+                "model": "gpt-4o",
+                "api_key": "secret",
+                "system_prompt": "hello",
+                "max_history_turns": 20,
+                "extra": {}
+            }
+            res = client.post("/agents/test", json=agent_payload)
+            self.assertEqual(res.status_code, 200)
+            self.assertEqual(res.json(), {"ok": True})
+            mock_agent.send.assert_called_once_with("ping")
+
+    def test_agent_probe_endpoint_failure(self):
+        from fastapi.testclient import TestClient
+        import backend.server
+        from unittest.mock import patch, MagicMock
+
+        client = TestClient(backend.server.app)
+        with patch("backend.server.create_agent") as mock_create:
+            mock_agent = MagicMock()
+            mock_agent.send.side_effect = Exception("API Key Expired")
+            mock_create.return_value = mock_agent
+
+            agent_payload = {
+                "name": "Test Probe Fail",
+                "kind": "openai",
+                "role": "helper",
+                "model": "gpt-4o",
+                "api_key": "expired",
+                "system_prompt": "hello",
+                "max_history_turns": 20,
+                "extra": {}
+            }
+            res = client.post("/agents/test", json=agent_payload)
+            self.assertEqual(res.status_code, 200)
+            self.assertEqual(res.json(), {"ok": False, "error": "API Key Expired"})
 
 
 if __name__ == "__main__":

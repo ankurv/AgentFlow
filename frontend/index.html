@@ -472,6 +472,26 @@
     color: var(--green);
     border: 1px solid rgba(16, 185, 129, 0.15);
   }
+  .health-dot {
+    transition: all 0.3s ease;
+  }
+  .health-dot.testing {
+    background: #64748b !important;
+    animation: healthPulse 1.5s infinite ease-in-out;
+  }
+  .health-dot.success {
+    background: #22c55e !important;
+    box-shadow: 0 0 8px #22c55e;
+  }
+  .health-dot.failed {
+    background: #ef4444 !important;
+    box-shadow: 0 0 8px #ef4444;
+    cursor: help;
+  }
+  @keyframes healthPulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+  }
   .agent-card-subtitle {
     font-size: 12px;
     color: var(--text-muted);
@@ -670,6 +690,7 @@ const COLORS = ['#818cf8','#22c55e','#14b8a6','#f97316','#eab308','#ec4899','#06
 let colorIdx = 0;
 let agentConfigs = []; // local copy for config panel
 let currentWsKey = 'dashboard';
+let agentHealthStatus = {};
 let paused = false;
 let projectOpen = false;
 let currentProjectPath = '';
@@ -958,11 +979,17 @@ async function steer() {
       body: JSON.stringify({message: msg})
     });
     document.getElementById('steerInput').value = '';
+    if (appStatus === 'paused') {
+      await fetch('/run/resume', {method:'POST'});
+      paused = false;
+      updateStatus('running');
+    }
   }
 }
 
 function updateStatus(s) {
   appStatus = s;
+  paused = (s === 'paused');
   const dot = document.getElementById('statusDot');
   const txt = document.getElementById('statusText');
   const pauseBtn = document.getElementById('pauseBtn');
@@ -1405,6 +1432,15 @@ function renderSingleCard(cfg, idx, isGlobal) {
       ? '<span class="agent-scope-badge global">Global Team</span>'
       : '<span class="agent-scope-badge project">Project Override</span>';
 
+    const statusInfo = agentHealthStatus[uid] || { status: 'testing', error: '' };
+    if (!agentHealthStatus[uid]) {
+      agentHealthStatus[uid] = { status: 'testing', error: '' };
+      setTimeout(() => checkAgentHealth(cfg, uid), 50);
+    }
+    const hoverTitle = statusInfo.status === 'failed' 
+      ? statusInfo.error 
+      : (statusInfo.status === 'success' ? 'Agent working correctly' : 'Testing connection...');
+
     return `
       <div class="agent-card" id="card-${uid}">
         <div class="agent-card-row">
@@ -1414,6 +1450,7 @@ function renderSingleCard(cfg, idx, isGlobal) {
           <div class="agent-card-details">
             <div class="agent-card-title-row">
               <span class="agent-card-title">${escHtml(cfg.name || '(New Agent)')}</span>
+              <span class="health-dot ${statusInfo.status}" title="${escAttr(hoverTitle)}" style="width:7px;height:7px;border-radius:50%;display:inline-block;vertical-align:middle;margin-left:4px"></span>
               ${badge}
               ${isCoordinator ? '<span style="font-size:11px;color:var(--yellow);font-weight:600">👑 Coordinator</span>' : ''}
             </div>
@@ -1593,11 +1630,57 @@ async function saveAgent(agentId, isGlobal) {
     notify(`Agent "${payload.name}" saved successfully.`);
     editingAgentId = null;
     editingAgentData = {};
+    const uid = (isGlobal ? 'global-' : 'project-') + (data.agent?.id || agentId);
+    delete agentHealthStatus[uid];
     await loadAgentConfig();
     fetchAgentStatus();
   } catch (err) {
     console.error("Failed to save agent config", err);
     notify("Network error saving agent details", true);
+  }
+}
+
+async function checkAgentHealth(cfg, uid) {
+  if (!cfg.name || !cfg.name.trim()) {
+    agentHealthStatus[uid] = { status: 'testing', error: '' };
+    return;
+  }
+
+  try {
+    const res = await fetch('/agents/test', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        name: cfg.name,
+        kind: cfg.kind,
+        role: cfg.role || '',
+        model: cfg.model || '',
+        api_key: cfg.api_key || '',
+        cli_command: cfg.cli_command || '',
+        system_prompt: cfg.system_prompt || '',
+        max_history_turns: Number(cfg.max_history_turns || 20),
+        extra: cfg.extra || {}
+      })
+    }).then(r => r.json());
+
+    if (res.ok) {
+      agentHealthStatus[uid] = { status: 'success', error: '' };
+    } else {
+      agentHealthStatus[uid] = { status: 'failed', error: res.error || 'Configuration check failed' };
+    }
+  } catch (err) {
+    agentHealthStatus[uid] = { status: 'failed', error: err.message || 'Connection timeout' };
+  }
+
+  const card = document.getElementById('card-' + uid);
+  if (card) {
+    const dot = card.querySelector('.health-dot');
+    if (dot) {
+      dot.className = `health-dot ${agentHealthStatus[uid].status}`;
+      dot.title = agentHealthStatus[uid].status === 'failed' 
+        ? agentHealthStatus[uid].error 
+        : (agentHealthStatus[uid].status === 'success' ? 'Agent working correctly' : 'Testing connection...');
+    }
   }
 }
 
