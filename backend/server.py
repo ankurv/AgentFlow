@@ -57,6 +57,11 @@ class AppState:
         self.current_idea = workspace.brief()
         return workspace
 
+    def persist_agents(self):
+        if not self.workspace or not self.store:
+            raise ValueError("Open a project first")
+        self.store.save_agents(self.configs)
+
     @property
     def merged_configs(self) -> list[dict]:
         # Merge global and project configs by name (case-insensitive key). Local overrides global.

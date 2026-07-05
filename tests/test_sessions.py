@@ -709,10 +709,9 @@ print('hello world')
                 self.assertEqual(res.status_code, 200)
                 self.assertEqual(res.json()["agent"]["system_prompt"], "updated global system")
 
-                # 3. Simulate opening a project with local configs
+                # 3. Simulate opening a project and adding a project-level agent via POST /agents
                 backend.server.state.open_project(tmpdir)
-                backend.server.state.configs = [{
-                    "id": "local-id",
+                local_agent = {
                     "name": "Standard Dev",  # Name collision!
                     "kind": "openai",
                     "role": "developer",
@@ -721,7 +720,16 @@ print('hello world')
                     "system_prompt": "local override system",
                     "max_history_turns": 20,
                     "extra": {}
-                }]
+                }
+                res = client.post("/agents", json=local_agent)
+                self.assertEqual(res.status_code, 200)
+                local_id = res.json()["agent"]["id"]
+
+                # Test PUT /agents/{agent_id}
+                local_agent["system_prompt"] = "updated local system"
+                res = client.put(f"/agents/{local_id}", json=local_agent)
+                self.assertEqual(res.status_code, 200)
+                self.assertEqual(res.json()["agent"]["system_prompt"], "updated local system")
 
                 # 4. GET /agents should list both and resolve merged correctly
                 res = client.get("/agents")
@@ -733,7 +741,7 @@ print('hello world')
 
                 # Local override should win
                 self.assertEqual(data["merged"][0]["model"], "gpt-4o-mini")
-                self.assertEqual(data["merged"][0]["system_prompt"], "local override system")
+                self.assertEqual(data["merged"][0]["system_prompt"], "updated local system")
 
             finally:
                 backend.server.GLOBAL_AGENTS_PATH = orig_path
