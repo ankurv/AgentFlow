@@ -438,6 +438,114 @@
   .color-cli        { background: #f97316; }
   .color-ollama     { background: #f59e0b; }
   .color-default    { background: #64748b; }
+
+  /* New Agent Config Card Layout Styles */
+  .agent-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    margin-bottom: 12px;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+  }
+  .agent-card.editing {
+    border-color: var(--accent);
+    box-shadow: 0 0 14px var(--accent-glow);
+    background: var(--bg3);
+  }
+  .agent-card-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+  }
+  .agent-card-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--heading-font);
+    font-weight: 700;
+    font-size: 14px;
+    color: #fff;
+    flex-shrink: 0;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.25);
+  }
+  .agent-card-details {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .agent-card-title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .agent-card-title {
+    font-family: var(--heading-font);
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .agent-scope-badge {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 12px;
+    letter-spacing: 0.05em;
+  }
+  .agent-scope-badge.global {
+    background: rgba(129, 140, 248, 0.08);
+    color: var(--accent2);
+    border: 1px solid rgba(129, 140, 248, 0.15);
+  }
+  .agent-scope-badge.project {
+    background: rgba(16, 185, 129, 0.08);
+    color: var(--green);
+    border: 1px solid rgba(16, 185, 129, 0.15);
+  }
+  .agent-card-subtitle {
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .agent-card-actions {
+    display: flex;
+    gap: 8px;
+  }
+  .agent-edit-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 8px;
+  }
+  .agent-form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 14px;
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+  }
+  .agent-details-toggle {
+    font-size: 11.5px;
+    color: var(--accent2);
+    cursor: pointer;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 6px;
+  }
 </style>
 </head>
 <body>
@@ -532,20 +640,19 @@
   <!-- ── Agent Config ── -->
   <div class="panel" id="panel-config">
     <div class="config-layout">
-      <h2>Agent Configuration</h2>
-      <p class="muted-note">Configure agents globally to automatically run them across all projects, or define local overrides and custom agents here. Local project-specific agents override global ones of the same name.</p>
+      <h2>Agent Team</h2>
+      <p class="muted-note">Configure global team templates or customize project overrides. Project-specific agents take precedence over global agents with matching names.</p>
       
-      <h3 style="margin-top:20px;margin-bottom:8px;font-size:15px;color:var(--text);border-bottom:1px solid var(--border);padding-bottom:6px">Global Team (Shared across all projects)</h3>
-      <div class="agent-cards" id="globalAgentCards"></div>
-      <button class="add-agent-btn" onclick="addGlobalAgentCard()" style="margin-top:8px">＋ Add Global Agent</button>
-      
-      <h3 style="margin-top:30px;margin-bottom:8px;font-size:15px;color:var(--text);border-bottom:1px solid var(--border);padding-bottom:6px">Project-Specific Team & Overrides</h3>
-      <div class="agent-cards" id="projectAgentCards"></div>
-      <button class="add-agent-btn" onclick="addProjectAgentCard()" style="margin-top:8px">＋ Add Project Agent</button>
-      
-      <div style="margin-top:24px;border-top:1px solid var(--border);padding-top:16px">
-        <button class="btn btn-primary" onclick="saveAllAgentConfigs()" style="padding:10px 20px;font-size:13px;font-weight:600">Save Changes</button>
+      <!-- Active Scope Header -->
+      <div id="activeScopeBanner" style="background:rgba(255,255,255,0.02); border:1px solid var(--border); border-radius:var(--radius); padding:14px 18px; margin-bottom:20px; display:flex; align-items:center; justify-content:space-between">
+        <div style="display:flex; flex-direction:column; gap:2px">
+          <span style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--muted); letter-spacing:0.06em">Active Scope</span>
+          <span id="scopeLabel" style="font-family:var(--heading-font); font-size:15px; font-weight:700; color:var(--accent2)">Global Scope (No Project Open)</span>
+        </div>
+        <button class="btn btn-primary" onclick="addNewAgentCard()" style="font-size:12px; padding:6px 12px">＋ Add Agent</button>
       </div>
+
+      <div class="agent-cards" id="agentCardsContainer"></div>
     </div>
   </div>
 
@@ -1178,6 +1285,8 @@ function renderHistory(runs) {
 const KINDS = ['claude','openai','gemini','cli','ollama'];
 let globalAgentConfigs = [];
 let projectAgentConfigs = [];
+let editingAgentId = null; // String format: 'global-<id>' or 'project-<id>'
+let editingAgentData = {};
 
 async function loadAgentConfig() {
   const res = await fetch('/agents').then(r=>r.json());
@@ -1187,217 +1296,366 @@ async function loadAgentConfig() {
 }
 
 function renderAgentCards() {
-  renderAgentList('globalAgentCards', globalAgentConfigs, true);
-  renderAgentList('projectAgentCards', projectAgentConfigs, false);
+  const container = document.getElementById('agentCardsContainer');
+  if (!container) return;
+
+  const scopeLabel = document.getElementById('scopeLabel');
+  if (projectOpen) {
+    scopeLabel.textContent = `Project Scope: ${escHtml(currentProjectPath.split('/').pop())}`;
+  } else {
+    scopeLabel.textContent = `Global Scope (No Project Open)`;
+  }
+
+  let html = '';
+
+  // Render Global List
+  html += `<h3 style="margin-top:10px;margin-bottom:12px;font-size:12.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;border-bottom:1px solid var(--border);padding-bottom:6px">Global Team Templates</h3>`;
+  if (!globalAgentConfigs.length) {
+    html += `<div style="color:var(--muted);font-size:12.5px;font-style:italic;margin-bottom:20px;padding:8px 0">No global agents configured.</div>`;
+  } else {
+    globalAgentConfigs.forEach((cfg, idx) => {
+      html += renderSingleCard(cfg, idx, true);
+    });
+  }
+
+  // Render Project List
+  if (projectOpen) {
+    html += `<h3 style="margin-top:24px;margin-bottom:12px;font-size:12.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;border-bottom:1px solid var(--border);padding-bottom:6px">Project-Specific Team & Overrides</h3>`;
+    if (!projectAgentConfigs.length) {
+      html += `<div style="color:var(--muted);font-size:12.5px;font-style:italic;margin-bottom:20px;padding:8px 0">No project-specific overrides. Using global team templates.</div>`;
+    } else {
+      projectAgentConfigs.forEach((cfg, idx) => {
+        html += renderSingleCard(cfg, idx, false);
+      });
+    }
+  }
+
+  container.innerHTML = html;
 }
 
-function renderAgentList(containerId, configs, isGlobal) {
-  const container = document.getElementById(containerId);
-  if (!container) return;
+function renderSingleCard(cfg, idx, isGlobal) {
+  const uid = (isGlobal ? 'global-' : 'project-') + cfg.id;
+  const isEditing = editingAgentId === uid;
   
-  const arrayName = isGlobal ? 'globalAgentConfigs' : 'projectAgentConfigs';
-  
-  container.innerHTML = configs.map((cfg, i) => {
-    const uniqueId = `${isGlobal ? 'g' : 'p'}-${cfg.id || i}`;
-    const checkedCoordinator = cfg.extra?.is_coordinator ? 'checked' : '';
+  if (!isEditing) {
+    const isCoordinator = cfg.extra?.is_coordinator;
+    const initial = (cfg.name || '?').charAt(0).toUpperCase();
+    let kindClass = 'color-default';
+    if (['claude','openai','gemini','cli','ollama'].includes(cfg.kind)) {
+      kindClass = `color-${cfg.kind}`;
+    }
     
+    let actionButtons = '';
+    if (isGlobal) {
+      if (projectOpen) {
+        actionButtons += `
+          <button class="btn btn-secondary" onclick="overrideForProject('${cfg.id}')" style="padding:4px 10px;font-size:11px">Customize for Project</button>
+          <button class="btn btn-secondary" onclick="startEditAgent('${uid}', true, ${idx})" style="padding:4px 10px;font-size:11px">Edit Global</button>
+        `;
+      } else {
+        actionButtons += `
+          <button class="btn btn-secondary" onclick="startEditAgent('${uid}', true, ${idx})" style="padding:4px 10px;font-size:11px">Edit</button>
+        `;
+      }
+      actionButtons += `
+        <button class="btn btn-danger" onclick="deleteAgent('${cfg.id}', true)" style="padding:4px 10px;font-size:11px">Delete</button>
+      `;
+    } else {
+      actionButtons += `
+        <button class="btn btn-secondary" onclick="startEditAgent('${uid}', false, ${idx})" style="padding:4px 10px;font-size:11px">Edit</button>
+        <button class="btn btn-secondary" onclick="promoteToGlobal('${cfg.id}')" style="padding:4px 10px;font-size:11px">Make Global</button>
+        <button class="btn btn-danger" onclick="deleteAgent('${cfg.id}', false)" style="padding:4px 10px;font-size:11px">Delete</button>
+      `;
+    }
+
+    const badge = isGlobal 
+      ? '<span class="agent-scope-badge global">Global Team</span>'
+      : '<span class="agent-scope-badge project">Project Override</span>';
+
     return `
-      <div class="agent-card" id="card-${uniqueId}">
-        <div class="agent-card-header">
-          <div class="agent-card-name" id="card-name-${uniqueId}" style="color:var(--text);font-size:14px;font-weight:600">
-            ${escHtml(cfg.name)}
+      <div class="agent-card" id="card-${uid}">
+        <div class="agent-card-row">
+          <div class="agent-card-avatar ${kindClass}">
+            ${initial}
           </div>
-          <span class="agent-card-kind">${cfg.kind}</span>
-          ${!isGlobal ? `<button class="btn btn-secondary" onclick="makeAgentGlobal(${i})" style="padding:3px 8px;font-size:11px">Make Global</button>` : ''}
-          <button class="btn btn-secondary" onclick="duplicateAgent(${i}, ${isGlobal})" style="padding:3px 8px;font-size:11px">Duplicate</button>
-          <button class="btn btn-danger" onclick="removeAgent(${i}, ${isGlobal})" style="padding:3px 8px;font-size:11px">Remove</button>
+          <div class="agent-card-details">
+            <div class="agent-card-title-row">
+              <span class="agent-card-title">${escHtml(cfg.name || '(New Agent)')}</span>
+              ${badge}
+              ${isCoordinator ? '<span style="font-size:11px;color:var(--yellow);font-weight:600">👑 Coordinator</span>' : ''}
+            </div>
+            <div class="agent-card-subtitle">
+              <span><strong>Kind:</strong> ${cfg.kind}</span>
+              <span>·</span>
+              <span><strong>Model:</strong> ${escHtml(cfg.model || 'default')}</span>
+              <span>·</span>
+              <span><strong>Role:</strong> ${escHtml(cfg.role || 'none')}</span>
+            </div>
+          </div>
+          <div class="agent-card-actions">
+            ${actionButtons}
+          </div>
+        </div>
+      </div>
+    `;
+  } else {
+    // EDIT MODE FORM
+    const data = editingAgentData;
+    return `
+      <div class="agent-card editing" id="card-${uid}">
+        <div style="font-family:var(--heading-font);font-size:13.5px;font-weight:700;margin-bottom:12px;color:var(--accent2);border-bottom:1px solid var(--border);padding-bottom:6px">
+          Editing ${isGlobal ? 'Global' : 'Project'} Agent: ${escHtml(cfg.name || 'New Agent')}
         </div>
         <div class="form-grid">
           <div class="form-group">
             <label>Agent Name</label>
-            <input value="${escAttr(cfg.name)}" placeholder="Builder, Ada, critic..." oninput="${arrayName}[${i}].name=this.value;document.getElementById('card-name-${uniqueId}').textContent=this.value">
+            <input value="${escAttr(data.name)}" placeholder="Builder, Ada, critic..." oninput="editingAgentData.name=this.value">
           </div>
           <div class="form-group">
             <label>Kind</label>
-            <select onchange="${arrayName}[${i}].kind=this.value;renderAgentCards()">
-              ${KINDS.map(k=>`<option value="${k}" ${k===cfg.kind?'selected':''}>${k}</option>`).join('')}
+            <select onchange="editingAgentData.kind=this.value;renderAgentCards()">
+              ${KINDS.map(k=>`<option value="${k}" ${k===data.kind?'selected':''}>${k}</option>`).join('')}
             </select>
-          </div>
-          <div class="form-group full" style="display:flex;align-items:center;gap:6px;margin:2px 0">
-            <input type="checkbox" id="coordinator-${uniqueId}" ${checkedCoordinator} onchange="toggleCoordinator(${i}, ${isGlobal}, this.checked)" style="width:auto;margin:0">
-            <label for="coordinator-${uniqueId}" style="cursor:pointer;font-weight:600;font-size:11px;user-select:none;margin:0">Team Coordinator (acts as manager of the agent debate & execution loop)</label>
           </div>
           <div class="form-group">
             <label>Role</label>
-            <input value="${escAttr(cfg.role||'')}" placeholder="developer, reviewer, tester..." oninput="${arrayName}[${i}].role=this.value">
+            <input value="${escAttr(data.role||'')}" placeholder="developer, reviewer, tester..." oninput="editingAgentData.role=this.value">
           </div>
           <div class="form-group">
             <label>Model</label>
-            <input value="${escAttr(cfg.model||'')}" placeholder="${modelPlaceholder(cfg.kind)}" oninput="${arrayName}[${i}].model=this.value">
+            <input value="${escAttr(data.model||'')}" placeholder="${modelPlaceholder(data.kind)}" oninput="editingAgentData.model=this.value">
+          </div>
+          <div class="form-group full" style="display:flex;align-items:center;gap:6px;margin:4px 0">
+            <input type="checkbox" id="edit-coordinator-${uid}" ${data.extra?.is_coordinator ? 'checked' : ''} onchange="editingAgentData.extra.is_coordinator=this.checked" style="width:auto;margin:0">
+            <label for="edit-coordinator-${uid}" style="cursor:pointer;font-weight:600;font-size:11px;user-select:none;margin:0;text-transform:none">Team Coordinator (acts as manager of debate & execution loop)</label>
           </div>
           
-          <details class="advanced-settings-details" style="grid-column: span 2; margin-top: 8px;">
-            <summary style="font-size:11px;font-weight:600;color:var(--text-muted);cursor:pointer;user-select:none;outline:none">Advanced Settings</summary>
-            <div class="form-grid" style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border2)">
+          <details style="grid-column: span 2; margin-top: 6px;">
+            <summary style="font-size:11px;font-weight:600;color:var(--accent2);cursor:pointer;user-select:none;outline:none">Advanced Settings</summary>
+            <div class="form-grid" style="margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border)">
               <div class="form-group full">
                 <label>API Key</label>
-                <input type="password" value="${escAttr(cfg.api_key||'')}" placeholder="fallback to env var" oninput="${arrayName}[${i}].api_key=this.value">
+                <input type="password" value="${escAttr(data.api_key||'')}" placeholder="fallback to env var" oninput="editingAgentData.api_key=this.value">
               </div>
               <div class="form-group full">
                 <label>CLI command (for local models)</label>
-                <input value="${escAttr(cfg.cli_command||'')}" placeholder="e.g. ollama run llama3" oninput="${arrayName}[${i}].cli_command=this.value">
+                <input value="${escAttr(data.cli_command||'')}" placeholder="e.g. ollama run llama3" oninput="editingAgentData.cli_command=this.value">
               </div>
               <div class="form-group full">
                 <label>System Prompt (overrides default roles)</label>
-                <textarea style="height:60px" oninput="${arrayName}[${i}].system_prompt=this.value">${escHtml(cfg.system_prompt||'')}</textarea>
+                <textarea style="height:60px" oninput="editingAgentData.system_prompt=this.value">${escHtml(data.system_prompt||'')}</textarea>
               </div>
               <div class="form-group">
                 <label>Max history turns</label>
-                <input type="number" min="1" value="${cfg.max_history_turns||20}" oninput="${arrayName}[${i}].max_history_turns=parseInt(this.value)||20">
+                <input type="number" min="1" value="${data.max_history_turns||20}" oninput="editingAgentData.max_history_turns=parseInt(this.value)||20">
               </div>
               <div class="form-group">
                 <label>Input cost /M tok</label>
-                <input type="number" step="0.01" value="${(cfg.extra||{}).input_cost_per_million??''}" placeholder="auto" onchange="setExtraVal(${i}, ${isGlobal}, 'input_cost_per_million', this.value)">
+                <input type="number" step="0.01" value="${data.extra?.input_cost_per_million??''}" placeholder="auto" onchange="setEditingExtra('input_cost_per_million', this.value)">
               </div>
               <div class="form-group">
-                <label>Cached input</label>
-                <input type="number" step="0.01" value="${(cfg.extra||{}).cached_input_cost_per_million??''}" placeholder="auto" onchange="setExtraVal(${i}, ${isGlobal}, 'cached_input_cost_per_million', this.value)">
+                <label>Cached input cost</label>
+                <input type="number" step="0.01" value="${data.extra?.cached_input_cost_per_million??''}" placeholder="auto" onchange="setEditingExtra('cached_input_cost_per_million', this.value)">
               </div>
               <div class="form-group">
-                <label>Output</label>
-                <input type="number" step="0.01" value="${(cfg.extra||{}).output_cost_per_million??''}" placeholder="auto" onchange="setExtraVal(${i}, ${isGlobal}, 'output_cost_per_million', this.value)">
+                <label>Output cost</label>
+                <input type="number" step="0.01" value="${data.extra?.output_cost_per_million??''}" placeholder="auto" onchange="setEditingExtra('output_cost_per_million', this.value)">
               </div>
               <div class="form-group">
-                <label>Rate-limit retry base (seconds)</label>
-                <input type="number" min="1" value="${(cfg.extra||{}).rate_limit_retry_seconds??30}" oninput="setExtraVal(${i}, ${isGlobal}, 'rate_limit_retry_seconds', this.value)">
+                <label>Retry base (sec)</label>
+                <input type="number" min="1" value="${data.extra?.rate_limit_retry_seconds??30}" oninput="setEditingExtra('rate_limit_retry_seconds', this.value)">
               </div>
               <div class="form-group">
-                <label>Maximum retry wait (seconds)</label>
-                <input type="number" min="1" value="${(cfg.extra||{}).rate_limit_max_wait_seconds??900}" oninput="setExtraVal(${i}, ${isGlobal}, 'rate_limit_max_wait_seconds', this.value)">
+                <label>Max retry wait (sec)</label>
+                <input type="number" min="1" value="${data.extra?.rate_limit_max_wait_seconds??900}" oninput="setEditingExtra('rate_limit_max_wait_seconds', this.value)">
               </div>
             </div>
           </details>
         </div>
+        <div class="agent-form-actions">
+          <button class="btn btn-secondary" onclick="cancelEditAgent()">Cancel</button>
+          <button class="btn btn-primary" onclick="saveAgent('${cfg.id}', ${isGlobal})">Save</button>
+        </div>
       </div>
     `;
-  }).join('');
+  }
 }
 
 function modelPlaceholder(kind) {
   return {claude:'claude-sonnet-4-6',openai:'gpt-4o',gemini:'gemini-2.5-flash',ollama:'llama3',cli:''}[kind]||'';
 }
 
-function setExtraVal(i, isGlobal, key, value) {
-  const arr = isGlobal ? globalAgentConfigs : projectAgentConfigs;
-  const extra = {...(arr[i].extra || {})};
-  if (value === '') delete extra[key]; else extra[key] = Number(value);
-  arr[i].extra = extra;
-}
-
-function toggleCoordinator(idx, isGlobal, checked) {
-  globalAgentConfigs.forEach((cfg, i) => {
-    if (!cfg.extra) cfg.extra = {};
-    if (isGlobal && i === idx) cfg.extra.is_coordinator = checked;
-    else if (checked) cfg.extra.is_coordinator = false;
-  });
-  projectAgentConfigs.forEach((cfg, i) => {
-    if (!cfg.extra) cfg.extra = {};
-    if (!isGlobal && i === idx) cfg.extra.is_coordinator = checked;
-    else if (checked) cfg.extra.is_coordinator = false;
-  });
-  renderAgentCards();
-}
-
-function addGlobalAgentCard() {
-  globalAgentConfigs.push({id: 'new-'+Date.now(), name:'Global Agent '+(globalAgentConfigs.length+1), role:'', kind:'claude', model:'', api_key:'', system_prompt:'', max_history_turns:20, extra:{}});
-  renderAgentCards();
-}
-
-function addProjectAgentCard() {
-  projectAgentConfigs.push({id: 'new-'+Date.now(), name:'Project Agent '+(projectAgentConfigs.length+1), role:'', kind:'claude', model:'', api_key:'', system_prompt:'', max_history_turns:20, extra:{}});
-  renderAgentCards();
-}
-
-function duplicateAgent(i, isGlobal) {
-  const arr = isGlobal ? globalAgentConfigs : projectAgentConfigs;
-  const source = arr[i];
-  arr.splice(i + 1, 0, {
-    ...source,
-    id: 'new-' + Date.now(),
-    name: source.name + ' 2',
-    extra: {...(source.extra || {})},
-  });
-  renderAgentCards();
-}
-
-function removeAgent(i, isGlobal) {
-  const arr = isGlobal ? globalAgentConfigs : projectAgentConfigs;
-  arr.splice(i, 1);
-  renderAgentCards();
-}
-
-function makeAgentGlobal(i) {
-  const source = projectAgentConfigs[i];
-  globalAgentConfigs.push({
-    ...source,
-    id: 'new-' + Date.now(),
-    extra: {...(source.extra || {})}
-  });
-  projectAgentConfigs.splice(i, 1);
-  renderAgentCards();
-  notify(`Moved "${source.name}" to the Global Team list.`);
-}
-
-async function saveAllAgentConfigs() {
-  // 1. Save global agents
-  const existingGlobal = await fetch('/agents/global').then(r=>r.json());
-  const existingGlobalIds = new Set((existingGlobal.agents || []).map(a => a.id));
-  const desiredGlobalIds = new Set(globalAgentConfigs.filter(c => existingGlobalIds.has(c.id)).map(c => c.id));
-  
-  for (const cfg of globalAgentConfigs) {
-    const isExisting = existingGlobalIds.has(cfg.id);
-    const response = await fetch(isExisting ? `/agents/global/${cfg.id}` : '/agents/global', {
-      method: isExisting ? 'PUT' : 'POST',
-      headers: {'Content-Type':'application/json'}, body: JSON.stringify(cfg),
-    });
-    const data = await response.json();
-    if (!response.ok) { notify(data.detail || `Could not save global agent ${cfg.name}`, true); return; }
+function setEditingExtra(key, value) {
+  if (!editingAgentData.extra) editingAgentData.extra = {};
+  if (value === '') {
+    delete editingAgentData.extra[key];
+  } else {
+    editingAgentData.extra[key] = Number(value);
   }
-  for (const old of (existingGlobal.agents || [])) {
-    if (!desiredGlobalIds.has(old.id)) {
-      await fetch(`/agents/global/${old.id}`, {method: 'DELETE'});
-    }
-  }
-  
-  // 2. Save project agents (only if project is open)
-  if (projectOpen) {
-    const existingProject = await fetch('/agents').then(r=>r.json());
-    const existingProjIds = new Set((existingProject.project || []).map(a => a.id));
-    const desiredProjIds = new Set(projectAgentConfigs.filter(c => existingProjIds.has(c.id)).map(c => c.id));
-    
-    for (const cfg of projectAgentConfigs) {
-      const isExisting = existingProjIds.has(cfg.id);
-      const response = await fetch(isExisting ? `/agents/${cfg.id}` : '/agents', {
-        method: isExisting ? 'PUT' : 'POST',
-        headers: {'Content-Type':'application/json'}, body: JSON.stringify(cfg),
-      });
-      const data = await response.json();
-      if (!response.ok) { notify(data.detail || `Could not save local agent ${cfg.name}`, true); return; }
-    }
-    for (const old of (existingProject.project || [])) {
-      if (!desiredProjIds.has(old.id)) {
-        await fetch(`/agents/${old.id}`, {method: 'DELETE'});
+}
+
+function startEditAgent(uid, isGlobal, idx) {
+  editingAgentId = uid;
+  const arr = isGlobal ? globalAgentConfigs : projectAgentConfigs;
+  editingAgentData = JSON.parse(JSON.stringify(arr[idx]));
+  if (!editingAgentData.extra) editingAgentData.extra = {};
+  renderAgentCards();
+}
+
+function cancelEditAgent() {
+  if (editingAgentId) {
+    const parts = editingAgentId.split('-');
+    const scope = parts[0];
+    const idVal = parts.slice(1).join('-');
+    if (idVal.startsWith('new-')) {
+      if (scope === 'global') {
+        globalAgentConfigs = globalAgentConfigs.filter(a => a.id !== idVal);
+      } else {
+        projectAgentConfigs = projectAgentConfigs.filter(a => a.id !== idVal);
       }
     }
   }
+  editingAgentId = null;
+  editingAgentData = {};
+  renderAgentCards();
+}
+
+async function saveAgent(agentId, isGlobal) {
+  if (!editingAgentData.name || !editingAgentData.name.trim()) {
+    notify('Agent name is required.', true);
+    return;
+  }
+
+  const payload = {...editingAgentData};
+  const isNew = agentId.startsWith('new-');
+
+  // If this agent is coordinator, clear coordinator status on others locally
+  if (payload.extra?.is_coordinator) {
+    const arr = isGlobal ? globalAgentConfigs : projectAgentConfigs;
+    arr.forEach(a => {
+      if (a.id !== agentId) {
+        if (!a.extra) a.extra = {};
+        a.extra.is_coordinator = false;
+      }
+    });
+  }
+
+  const url = isGlobal 
+    ? (isNew ? '/agents/global' : `/agents/global/${agentId}`)
+    : (isNew ? '/agents' : `/agents/${agentId}`);
+  const method = isNew ? 'POST' : 'PUT';
+
+  try {
+    const response = await fetch(url, {
+      method: method,
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      notify(data.detail || 'Failed to save agent.', true);
+      return;
+    }
+
+    notify(`Agent "${payload.name}" saved successfully.`);
+    editingAgentId = null;
+    editingAgentData = {};
+    await loadAgentConfig();
+    fetchAgentStatus();
+  } catch (err) {
+    console.error("Failed to save agent config", err);
+    notify("Network error saving agent details", true);
+  }
+}
+
+async function deleteAgent(agentId, isGlobal) {
+  if (!confirm("Are you sure you want to delete this agent?")) return;
+  const url = isGlobal ? `/agents/global/${agentId}` : `/agents/${agentId}`;
+  try {
+    const response = await fetch(url, { method: 'DELETE' });
+    if (!response.ok) {
+      const data = await response.json();
+      notify(data.detail || 'Failed to delete agent', true);
+      return;
+    }
+    notify("Agent deleted successfully.");
+    await loadAgentConfig();
+    fetchAgentStatus();
+  } catch (err) {
+    console.error("Failed to delete agent", err);
+    notify("Failed to delete agent", true);
+  }
+}
+
+function overrideForProject(agentId) {
+  const source = globalAgentConfigs.find(a => a.id === agentId);
+  if (!source) return;
   
-  const updated = await fetch('/agents').then(r=>r.json());
-  const merged = updated.merged || [];
-  merged.forEach(a => { if(!agentColors[a.name]) agentColors[a.name] = COLORS[colorIdx++ % COLORS.length]; });
-  fetchAgentStatus();
-  notify(appStatus === 'needs_attention'
-    ? 'Agent fix saved · retry the failed turn when ready'
-    : 'Agent team saved successfully');
+  const tempId = 'new-' + Date.now();
+  const clone = JSON.parse(JSON.stringify(source));
+  clone.id = tempId;
+  if (!clone.extra) clone.extra = {};
+  
+  projectAgentConfigs.push(clone);
+  editingAgentId = `project-${tempId}`;
+  editingAgentData = clone;
+  renderAgentCards();
+  notify(`Customizing "${source.name}" locally for this project.`);
+}
+
+async function promoteToGlobal(agentId) {
+  const source = projectAgentConfigs.find(a => a.id === agentId);
+  if (!source) return;
+
+  const clone = JSON.parse(JSON.stringify(source));
+  clone.id = 'new-' + Date.now();
+
+  try {
+    const response = await fetch('/agents/global', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(clone)
+    });
+    if (!response.ok) {
+      const data = await response.json();
+      notify(data.detail || 'Failed to copy to global team.', true);
+      return;
+    }
+    notify(`Copied "${source.name}" to the Global Team list.`);
+    await loadAgentConfig();
+  } catch (err) {
+    console.error("Failed to promote agent", err);
+  }
+}
+
+function addNewAgentCard() {
+  if (editingAgentId && editingAgentId.includes('new-')) {
+    notify('Please save or cancel the current new agent form first.', true);
+    return;
+  }
+  
+  const tempId = 'new-' + Date.now();
+  const newAgent = {
+    id: tempId,
+    name: '',
+    role: '',
+    kind: 'claude',
+    model: '',
+    api_key: '',
+    system_prompt: '',
+    max_history_turns: 20,
+    extra: { is_coordinator: false }
+  };
+
+  if (projectOpen) {
+    projectAgentConfigs.push(newAgent);
+    editingAgentId = `project-${tempId}`;
+  } else {
+    globalAgentConfigs.push(newAgent);
+    editingAgentId = `global-${tempId}`;
+  }
+
+  editingAgentData = newAgent;
   renderAgentCards();
 }
 
