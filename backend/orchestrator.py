@@ -164,18 +164,19 @@ Available agents in the team:
 
 Read the current workspace files carefully and decide what should happen next.
 To run an agent, output their name under ## NEXT_AGENT and specify what they should do under ## INSTRUCTIONS.
+If you need clarification from the human user to make the right design choices, output USER under ## NEXT_AGENT, state the question(s) under ## INSTRUCTIONS, and set the verdict to PAUSE_FOR_INPUT.
 If you believe the design and implementation are fully complete, correct, and verified, output COMPLETE under ## VERDICT.
 
 Respond in this exact format:
 
 ## NEXT_AGENT
-<exact name of the agent to run next>
+<exact name of the agent to run next, or USER>
 
 ## INSTRUCTIONS
-<specific instructions or guidance for this agent's turn>
+<specific instructions or guidance for this agent's turn, or your clarifying question for the user>
 
 ## VERDICT
-<CONTINUE or COMPLETE>"""
+<CONTINUE, COMPLETE, or PAUSE_FOR_INPUT>"""
 
 
 # ─── Orchestrator ─────────────────────────────────────────────────────────────
@@ -763,10 +764,17 @@ class Orchestrator:
 
             next_agent_name, instructions, verdict = self._parse_coordinator_response(response)
 
-            if verdict == "COMPLETE":
+            if verdict in {"COMPLETE", "PAUSE", "PAUSE_FOR_INPUT"}:
+                status = "complete" if verdict == "COMPLETE" else "waiting_for_approval"
                 self._emit(Event(EventKind.PHASE, data={
-                    "phase": "coordinator", "status": "complete", "step": step
+                    "phase": "coordinator", "status": status, "step": step
                 }))
+                if verdict != "COMPLETE":
+                    self.pause()
+                    await self._wait_if_paused()
+                    if not self._running:
+                        break
+                    continue
                 break
 
             # Find selected agent
@@ -800,16 +808,7 @@ class Orchestrator:
                 **self._usage_event(selected_agent),
             }))
 
-            # Pause after each step if we require approval
-            if self.require_approval and step < max_steps:
-                self.pause()
-                self._emit(Event(EventKind.PHASE, data={
-                    "phase": "coordinator", "step": step,
-                    "status": "waiting_for_continuation"
-                }))
-                await self._wait_if_paused()
-                if not self._running:
-                    break
+
 
         coordinator.config.system_prompt = orig_system
 
