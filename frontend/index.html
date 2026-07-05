@@ -226,6 +226,18 @@
   .feed-agent { font-size: 13px; font-weight: 700; color: var(--text); }
   .feed-kind  { font-size: 10.5px; color: var(--muted); background: rgba(255,255,255,0.05); padding: 1px 6px; border-radius: 8px; }
   .feed-ts    { font-size: 10.5px; color: var(--muted); }
+  .feed-metrics-badge {
+    background: rgba(99, 102, 241, 0.1);
+    color: var(--accent2);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    border-radius: 12px;
+    padding: 2px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    margin-left: 8px;
+    font-family: var(--mono);
+    vertical-align: middle;
+  }
   .feed-text  { font-size: 13px; color: #e2e8f0; line-height: 1.5; margin-top: 6px; }
   
   .feed-detail { font-size: 12px; color: var(--text-muted); margin-top: 8px;
@@ -619,7 +631,13 @@
         <div id="dashboardView" style="margin-top: 12px; display:flex; flex-direction:column; gap:16px; flex:1; overflow:hidden">
           <!-- Mermaid visual map container -->
           <div id="mermaidMapContainer" style="background:rgba(255,255,255,0.02); border:1px solid var(--border); border-radius:var(--radius); padding:20px; display:none; flex-direction:column">
-            <h4 style="font-family:var(--heading-font); margin-bottom:12px; font-size:13px; text-transform:uppercase; color:var(--text-muted)">📐 Visual Architecture Connections</h4>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; width:100%">
+              <h4 style="font-family:var(--heading-font); margin:0; font-size:13px; text-transform:uppercase; color:var(--text-muted)">📐 Visual Architecture Connections</h4>
+              <div style="display:flex; gap:8px">
+                <button class="btn btn-secondary" onclick="copyMermaidCode()" style="padding: 4px 10px; font-size: 11px">Copy Code</button>
+                <button class="btn btn-secondary" onclick="copyMermaidSVG()" style="padding: 4px 10px; font-size: 11px">Copy SVG</button>
+              </div>
+            </div>
             <div id="mermaidTarget" class="mermaid" style="display:flex; justify-content:center; background:#090c12; padding:16px; border-radius:6px; overflow:auto"></div>
           </div>
           <!-- Side-by-side files split -->
@@ -653,7 +671,15 @@
           <span style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--muted); letter-spacing:0.06em">Active Scope</span>
           <span id="scopeLabel" style="font-family:var(--heading-font); font-size:15px; font-weight:700; color:var(--accent2)">Global Scope (No Project Open)</span>
         </div>
-        <button class="btn btn-primary" onclick="addNewAgentCard()" style="font-size:12px; padding:6px 12px">＋ Add Agent</button>
+        <div style="display:flex; gap:10px; align-items:center">
+          <select id="presetSelect" onchange="loadPresetTeam()" style="padding:6px 12px; font-size:12px; font-weight:600; outline:none; background:var(--bg3); border:1px solid var(--border2); border-radius:var(--radius); color:var(--text); cursor:pointer">
+            <option value="">📋 Load Preset Team...</option>
+            <option value="cloud">Standard Cloud (Gemini/OpenAI)</option>
+            <option value="local">Fully Local (Ollama)</option>
+            <option value="dual">Dual Agent (Gemini/OpenAI)</option>
+          </select>
+          <button class="btn btn-primary" onclick="addNewAgentCard()" style="font-size:12px; padding:6px 12px">＋ Add Agent</button>
+        </div>
       </div>
 
       <div class="agent-cards" id="agentCardsContainer"></div>
@@ -696,6 +722,7 @@ let paused = false;
 let projectOpen = false;
 let currentProjectPath = '';
 let toastTimer = null;
+let lastMermaidCode = '';
 
 function notify(message, isError=false) {
   const toast = document.getElementById('toast');
@@ -703,6 +730,150 @@ function notify(message, isError=false) {
   toast.className = `toast show ${isError ? 'error' : ''}`;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => toast.className = 'toast', 2600);
+}
+
+function copyMermaidSVG() {
+  const svg = document.querySelector('#mermaidTarget svg');
+  if (!svg) { notify('No diagram visual rendered to copy', true); return; }
+  navigator.clipboard.writeText(svg.outerHTML);
+  notify('Copied diagram SVG XML to clipboard!');
+}
+
+function copyMermaidCode() {
+  if (!lastMermaidCode) { notify('No diagram source code found to copy', true); return; }
+  navigator.clipboard.writeText(lastMermaidCode);
+  notify('Copied Mermaid flowchart source code to clipboard!');
+}
+
+async function loadPresetTeam() {
+  const select = document.getElementById('presetSelect');
+  const val = select.value;
+  if (!val) return;
+  if (!confirm(`Are you sure you want to load the ${val === 'cloud' ? 'Standard Cloud' : val === 'local' ? 'Fully Local' : 'Dual Agent'} preset team? This will add preset agents to your active scope.`)) {
+    select.value = '';
+    return;
+  }
+
+  const isGlobal = !projectOpen;
+  const url = isGlobal ? '/agents/global' : '/agents';
+
+  let agents = [];
+  if (val === 'cloud') {
+    agents = [
+      {
+        name: 'CloudCoord',
+        kind: 'gemini',
+        role: 'Coordinator',
+        model: 'gemini-1.5-pro',
+        api_key: '',
+        cli_command: '',
+        system_prompt: 'You are the coordinator managing the team of agents.',
+        max_history_turns: 20,
+        extra: { is_coordinator: true }
+      },
+      {
+        name: 'CloudArch',
+        kind: 'gemini',
+        role: 'Architect',
+        model: 'gemini-1.5-flash',
+        api_key: '',
+        cli_command: '',
+        system_prompt: 'You are the architect designing components.',
+        max_history_turns: 20,
+        extra: {}
+      },
+      {
+        name: 'CloudCritic',
+        kind: 'openai',
+        role: 'Reviewer',
+        model: 'gpt-4o-mini',
+        api_key: '',
+        cli_command: '',
+        system_prompt: 'You are the critic/reviewer verifying specifications.',
+        max_history_turns: 20,
+        extra: {}
+      }
+    ];
+  } else if (val === 'local') {
+    agents = [
+      {
+        name: 'LocalCoord',
+        kind: 'ollama',
+        role: 'Coordinator',
+        model: 'llama3',
+        api_key: '',
+        cli_command: '',
+        system_prompt: 'You are the coordinator managing local agents.',
+        max_history_turns: 15,
+        extra: { is_coordinator: true }
+      },
+      {
+        name: 'LocalArch',
+        kind: 'ollama',
+        role: 'Architect',
+        model: 'mistral',
+        api_key: '',
+        cli_command: '',
+        system_prompt: 'You are the architect designing local software.',
+        max_history_turns: 15,
+        extra: {}
+      },
+      {
+        name: 'LocalCritic',
+        kind: 'ollama',
+        role: 'Reviewer',
+        model: 'gemma',
+        api_key: '',
+        cli_command: '',
+        system_prompt: 'You are the critic reviewing code.',
+        max_history_turns: 15,
+        extra: {}
+      }
+    ];
+  } else if (val === 'dual') {
+    agents = [
+      {
+        name: 'DualCoord',
+        kind: 'gemini',
+        role: 'Coordinator',
+        model: 'gemini-1.5-pro',
+        api_key: '',
+        cli_command: '',
+        system_prompt: 'You coordinate the architect debates.',
+        max_history_turns: 20,
+        extra: { is_coordinator: true }
+      },
+      {
+        name: 'DualArch',
+        kind: 'openai',
+        role: 'Architect',
+        model: 'gpt-4o',
+        api_key: '',
+        cli_command: '',
+        system_prompt: 'You design clean system components.',
+        max_history_turns: 20,
+        extra: {}
+      }
+    ];
+  }
+
+  try {
+    for (const agent of agents) {
+      await fetch(url, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(agent)
+      });
+    }
+    notify(`Loaded preset team successfully!`);
+    await loadAgentConfig();
+    fetchAgentStatus();
+  } catch (err) {
+    console.error("Failed to load preset team", err);
+    notify("Error loading preset team", true);
+  } finally {
+    select.value = '';
+  }
 }
 
 async function openProject() {
@@ -788,6 +959,7 @@ function appendFeed(ev) {
 
   let summary = '';
   let detail = '';
+  let metricsHtml = '';
 
   switch(ev.kind) {
     case 'phase':
@@ -801,6 +973,9 @@ function appendFeed(ev) {
       const u = ev.data.usage || {};
       summary = `${ev.data.turn_id || 'Turn'} completed · attempt ${ev.data.attempt || 1} (${(u.input_tokens||0).toLocaleString()} in · ${(u.cached_input_tokens||0).toLocaleString()} cached · ${(u.output_tokens||0).toLocaleString()} out)`;
       detail = ev.data.response || '';
+      const totalTok = (u.input_tokens || 0) + (u.output_tokens || 0);
+      const turnCost = ev.data.pricing_known ? formatCost(ev.data.cost_usd || 0) : 'unpriced';
+      metricsHtml = `<span class="feed-metrics-badge">${totalTok.toLocaleString()} tok · ${turnCost}</span>`;
       break;
     case 'vote':
       summary = `Vote: ${ev.data.vote} (round ${ev.data.round})`;
@@ -848,6 +1023,7 @@ function appendFeed(ev) {
           <div class="feed-agent-details">
             <span class="feed-agent">${ev.agent || 'System'}</span>
             <span class="feed-kind">${ev.kind}</span>
+            ${metricsHtml}
           </div>
           <span class="feed-ts">${ts}</span>
         </div>
@@ -1275,8 +1451,8 @@ async function loadWsFile(key) {
       const designContent = designRes.content || '';
       const mermaidMatch = designContent.match(/```mermaid([\s\S]*?)```/);
       
-      if (mermaidMatch && mermaidTarget && mapContainer) {
         const rawGraph = mermaidMatch[1].trim();
+        lastMermaidCode = rawGraph;
         mermaidTarget.removeAttribute('data-processed');
         mermaidTarget.textContent = rawGraph;
         mapContainer.style.display = 'flex';

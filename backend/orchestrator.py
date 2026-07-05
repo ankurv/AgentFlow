@@ -591,10 +591,14 @@ class Orchestrator:
     @staticmethod
     def _usage_event(agent: AgentBase) -> dict:
         usage = agent.last_usage.to_dict()
+        cost = agent._cost(agent.last_usage)
+        _, _, _, known = agent._pricing()
         return {
             "tokens": usage["total_tokens"],
             "usage": usage,
             "agent_totals": agent.usage_dict(),
+            "cost_usd": cost,
+            "pricing_known": known,
         }
 
     @staticmethod
