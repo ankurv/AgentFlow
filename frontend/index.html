@@ -1150,7 +1150,6 @@ async function retryFailedTurn() {
 }
 
 async function stopRun() {
-  if (!confirm('Stop the current run?')) return;
   await fetch('/run/stop', {method:'POST'});
   paused = false;
   updateStatus('idle');
