@@ -304,6 +304,18 @@ def update_global_agent(agent_id: str, body: AgentConfigIn):
         if current["id"] == agent_id:
             updated = body.model_dump()
             updated["id"] = agent_id
+            
+            active = live_agent(agent_id)
+            if active:
+                if updated["kind"] != current["kind"] or updated["name"] != current["name"]:
+                    raise HTTPException(
+                        400, "An active agent's name and kind cannot change; stop the run first"
+                    )
+                try:
+                    active.reconfigure(to_agent_config(updated))
+                except Exception as exc:
+                    raise HTTPException(400, f"Agent configuration is invalid: {exc}") from exc
+                    
             configs[index] = updated
             save_global_agents(configs)
             return {"ok": True, "agent": updated}
