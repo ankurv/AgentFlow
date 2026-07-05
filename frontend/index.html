@@ -1035,7 +1035,7 @@ function appendFeed(ev) {
           <span class="feed-ts">${ts}</span>
         </div>
         <div class="feed-text">${escHtml(summary)}</div>
-        ${detail ? `<div class="feed-detail" onclick="this.classList.toggle('expanded')">${escHtml(detail.slice(0,400))}${detail.length>400?'…':''}</div>` : ''}
+        ${detail ? `<div class="feed-detail" onclick="this.classList.toggle('expanded')">${escHtml(detail)}</div>` : ''}
       </div>
     </div>
   `;
