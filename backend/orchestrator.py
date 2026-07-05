@@ -295,24 +295,26 @@ class Orchestrator:
 
             coordinator = max(self.agents, key=get_model_score)
 
-        # Check if the prompt explicitly requests a debate or discussion
-        idea_lower = idea.lower()
-        is_debate = any(k in idea_lower for k in ["debate", "discuss", "discussion", "project", "loop", "run debate"]) or os.environ.get("AGENTFLOW_TEST") == "1"
+        # Parse explicit @mentions first
+        target_agent = None
+        prompt_text = idea
+        import re
+        match = re.search(r'@(\w+)', idea)
+        if match:
+            mention = match.group(1).lower()
+            for agent in self.agents:
+                if agent.name.lower() == mention:
+                    target_agent = agent
+                    prompt_text = re.sub(rf'@{match.group(1)}\s*', '', idea, flags=re.IGNORECASE).strip()
+                    break
 
-        if not is_debate:
-            # Direct chat mode!
-            target_agent = None
-            prompt_text = idea
-            import re
-            match = re.search(r'@(\w+)', idea)
-            if match:
-                mention = match.group(1).lower()
-                for agent in self.agents:
-                    if agent.name.lower() == mention:
-                        target_agent = agent
-                        prompt_text = re.sub(rf'@{match.group(1)}\s*', '', idea, flags=re.IGNORECASE).strip()
-                        break
-            
+        idea_lower = idea.lower()
+        explicit_debate = any(k in idea_lower for k in ["debate", "discuss", "discussion", "project", "loop", "run debate"]) or os.environ.get("AGENTFLOW_TEST") == "1"
+        
+        # Default to continuous multi-agent loop if we have a coordinator, UNLESS they @mentioned a specific agent.
+        is_direct = target_agent is not None or (not explicit_debate and not coordinator)
+
+        if is_direct:
             if not target_agent:
                 target_agent = coordinator or self.agents[0]
             
