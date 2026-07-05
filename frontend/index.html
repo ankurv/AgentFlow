@@ -969,7 +969,7 @@ function appendFeed(ev) {
     case 'turn_start':
       summary = `${ev.data.resumed ? 'Resuming' : 'Speaking'} · ${ev.data.turn_id || 'turn'} · attempt ${ev.data.attempt || 1} (${ev.data.role || ev.data.phase || ''} ${ev.data.round ? 'round '+ev.data.round : ''} ${ev.data.iteration ? 'iter '+ev.data.iteration : ''})`;
       break;
-    case 'turn_end':
+    case 'turn_end': {
       const u = ev.data.usage || {};
       summary = `${ev.data.turn_id || 'Turn'} completed · attempt ${ev.data.attempt || 1} (${(u.input_tokens||0).toLocaleString()} in · ${(u.cached_input_tokens||0).toLocaleString()} cached · ${(u.output_tokens||0).toLocaleString()} out)`;
       detail = ev.data.response || '';
@@ -977,6 +977,7 @@ function appendFeed(ev) {
       const turnCost = ev.data.pricing_known ? formatCost(ev.data.cost_usd || 0) : 'unpriced';
       metricsHtml = `<span class="feed-metrics-badge">${totalTok.toLocaleString()} tok · ${turnCost}</span>`;
       break;
+    }
     case 'vote':
       summary = `Vote: ${ev.data.vote} (round ${ev.data.round})`;
       break;
@@ -1450,7 +1451,7 @@ async function loadWsFile(key) {
       const mapContainer = document.getElementById('mermaidMapContainer');
       const designContent = designRes.content || '';
       const mermaidMatch = designContent.match(/```mermaid([\s\S]*?)```/);
-      
+      if (mermaidMatch && mermaidTarget && mapContainer) {
         const rawGraph = mermaidMatch[1].trim();
         lastMermaidCode = rawGraph;
         mermaidTarget.removeAttribute('data-processed');

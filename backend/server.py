@@ -310,6 +310,17 @@ def update_global_agent(agent_id: str, body: AgentConfigIn):
     raise HTTPException(404, "Global agent not found")
 
 
+@app.post("/agents/test")
+def test_agent_config(body: AgentConfigIn):
+    try:
+        config = to_agent_config(body.model_dump())
+        agent = create_agent(config)
+        agent.send("ping")
+        return {"ok": True}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
 class StartBody(BaseModel):
     idea: str = ""
     project_path: str = ""
