@@ -1,151 +1,95 @@
-# AgentFlow
+# 🚀 AgentFlow
 
-Multi-agent debate + build loop with a live monitoring UI.
+AgentFlow is an interactive **AI Architect Dashboard and Planning Board** designed to help developers pair-program with multiple AI agents. Instead of letting AI blindly generate codebases, AgentFlow focuses on the critical initial step: **aligning on design decisions and producing crisp, structured implementation plans** that you can feed to any AI builder (like Cursor, Codex, or Antigravity) to write the code.
 
-## Setup
+---
 
+## 🏗️ Key Features
+
+### 1. Unified Architect Dashboard
+* **Split Layout View**: View `DESIGN.md` (architecture specification) and `PLAN.md` (task breakdown) side-by-side.
+* **Mermaid.js Flowchart Renderer**: Automatically parses standard ` ```mermaid ` blocks from your design document and renders a visual, interactive component connections diagram on the canvas.
+
+### 2. Conversational Agent debates & Routing
+* **Direct Turn Routing**: Send a message directly to any specific agent by prefixing it with `@AgentName`.
+* **Keyword-Driven Debates**: Enter prompts like `debate choosing sqlite vs postgres` to start full-team debates. Standard conversational text is routed directly to the best coordinator model.
+* **Auto-Resume on Steer**: Submit a steering message in the bottom prompt bar while a run is paused; AgentFlow will automatically resume execution and alert the agents to read your input.
+* **Proactive Human Checkpoints**: The coordinator agent pauses automatically (emitting a `PAUSE_FOR_INPUT` verdict) to clarify requirements and ask design choice questions.
+
+### 3. Real-Time Connection Health Checks
+* **Live Status Dots**: Next to each agent config card, a glowing status indicator displays its connection status:
+  - 🔵 **Testing**: Dynamic validation in progress.
+  - 🟢 **Success**: Credentials and routing verified.
+  - 🔴 **Failed**: Credentials rejected (hovering shows the detailed error message).
+* **Context-Aware Override Scoping**: Instantly configure global agent templates or project-specific overrides. Project overrides take precedence.
+
+### 4. Bounded Context & Token Optimization
+* **Incremental Context**: Only sends modified file diffs since the agent's last turn.
+* **USD Cost Estimation**: Live input, output, and cached token tracking per agent with automated USD expenditure calculations.
+* **Sliding Window Memory**: Memory is adjusted automatically to avoid hitting provider token context limit bounds.
+
+---
+
+## 🛠️ Quick Start
+
+### 1. Requirements & Run
 ```bash
+# Clone the repository and navigate inside
 cd AGENTFLOW
+
+# Install dependencies
 python3 -m pip install -r requirements.txt
-python3 run.py
-# open http://localhost:8000
+
+# Start the application server
+python3 run.py --port 8000
 ```
+Open **[http://localhost:8000](http://localhost:8000)** in your browser.
 
-## Project folders and `AGENTFLOW.md`
+### 2. Setup a Project Folder
+1. Enter an absolute folder path (e.g. `/Users/you/my-project`) in the **Project Folder** bar and click **Open / Create**.
+2. AgentFlow automatically generates a `.agentflow/` folder to store agent overrides, debate history, and a local SQLite database (`agentflow.db`).
 
-Enter an absolute project-folder path in the UI and choose **Open / Create**. AgentFlow
-creates the folder when needed and writes generated source files directly into it.
-Orchestration-only files and the local database live under `.agentflow/`, which is
-created automatically and ignored by Git.
+---
 
-The project brief can be typed in the UI, or saved as `AGENTFLOW.md` in the project
-root. When the brief field is empty, **Start run** automatically uses that file. This
-makes a project self-describing and reusable across AgentFlow restarts.
+## 🗄️ Architecture & Structure
 
-Example:
-
-```markdown
-# AGENTFLOW.md
-
-Build a FastAPI service with `/health`, SQLite persistence, tests, and a Dockerfile.
-Prefer a small dependency surface and document local development commands.
-```
-
-## Structure
-
-```
+```text
 agentflow/
 ├── backend/
 │   ├── agents/
-│   │   ├── base.py         # AgentBase — abstract session with sliding-window memory
-│   │   └── providers.py    # Claude, OpenAI, Gemini, CLI, Ollama implementations
+│   │   ├── base.py         # Abstract AgentBase class with sliding window memory
+│   │   └── providers.py    # OpenAI, Claude, Gemini, CLI (agy, codex), Ollama
 │   ├── workspace/
-│   │   └── workspace.py    # Project-root file store with diff-based context
-│   ├── orchestrator.py     # Debate + build phases, SSE events, human steering
-│   ├── storage.py          # Per-project SQLite agents, runs, and events
-│   └── server.py           # FastAPI — REST + SSE
+│   │   └── workspace.py    # Directory management, file writes, and diff state
+│   ├── orchestrator.py     # Main coordinator debate, planning loops, and steering
+│   ├── storage.py          # Local SQLite session persistence
+│   └── server.py           # FastAPI REST API + SSE Event stream endpoints
 ├── frontend/
-│   └── index.html          # Single-page UI
-├── run.py
-└── requirements.txt
+│   └── index.html          # Interactive dashboard (HTML5, Tailwind, Vanilla CSS, JS)
+├── run.py                  # Startup script
+└── requirements.txt        # Backend dependencies
 ```
 
-## Adding a new agent provider
+---
 
-Subclass `AgentBase` and implement `_raw_send`:
+## 📝 Custom Agent Providers
+
+To register a custom LLM or API wrapper, subclass `AgentBase` and define `_raw_send`:
 
 ```python
-from backend.agents.base import AgentBase, AgentConfig
+from backend.agents.base import AgentBase, Usage
 
-class MyAgent(AgentBase):
-    def _raw_send(self, messages: list[dict], system: str) -> tuple[str, int]:
-        # call your model/API/CLI here
-        response_text = my_api.call(system, messages)
-        token_count = len(response_text.split())
-        return response_text, token_count
+class MyCustomAgent(AgentBase):
+    def _raw_send(self, messages: list[dict], system: str) -> tuple[str, Usage]:
+        # Call your API/model here
+        response_text = call_custom_api(system, messages)
+        usage = Usage(
+            input_tokens=100, 
+            output_tokens=len(response_text.split())
+        )
+        return response_text, usage
 
-# Register it
+# Register with provider mapping
 from backend.agents.providers import AGENT_KINDS
-AGENT_KINDS["myagent"] = MyAgent
+AGENT_KINDS["custom_provider"] = MyCustomAgent
 ```
-
-## Token optimization
-
-- OpenAI API agents use the Responses API and retain `previous_response_id`
-- Codex CLI agents retain their exact Codex thread ID and resume it each turn
-- Antigravity CLI agents retain an isolated, workspace-scoped conversation
-- Stateful providers receive only the new turn; stateless providers use a configurable sliding window
-- `changed_context()` sends only files that changed since the agent's last turn
-- Role-based filtering: developer only sees plan+src, reviewer sees design+src, etc.
-- Seed and phase-transition instructions are folded into useful turns instead of spending extra calls
-- Stable prompt prefixes allow provider prompt caches to reduce repeated-input cost
-
-Each logical agent owns its own provider session. Two agents may therefore use the
-same CLI command while retaining independent conversations, names, roles, and behavior
-prompts. For example, duplicate a Codex agent and configure one as an architecture
-lead and the other as a skeptical reviewer. The role and system behavior are installed
-when each session starts and remain part of that agent's identity.
-
-Stateful support currently includes exact Codex thread resume, workspace-isolated
-Antigravity continuation, OpenAI Responses `previous_response_id`, and Gemini chat
-sessions. Arbitrary CLI commands use stateless mode because AgentFlow cannot infer a
-safe vendor-specific resume protocol for them.
-
-All CLI subprocesses run with the selected project as their working directory, so
-relative file writes cannot leak into the AgentFlow application repository. AgentFlow
-captures Antigravity's exact conversation ID in a private per-agent log under
-`<project>/.agentflow/sessions/` and resumes it with `--conversation`; it never uses
-the unsafe global `--continue` fallback.
-
-## Usage and cost tracking
-
-The live sidebar shows input, cached-input, output, and total tokens per agent.
-The footer shows aggregate tokens and estimated USD cost. Known default model prices
-are included for the built-in default API models. You can override input, cached-input,
-and output USD-per-million-token rates on each agent card.
-
-CLI subscription usage and local Ollama usage do not have a reliable per-token dollar
-price, so the UI displays them as unpriced unless you configure explicit rates.
-Codex reports cached-input tokens in its JSON event stream. Antigravity preserves and
-resumes the exact conversation, but `agy` does not expose cached-token counts, so the
-UI labels its cache usage as **unreported** instead of incorrectly displaying zero.
-
-For authenticated CLI sessions, use the `cli` kind and leave the API key blank:
-
-```text
-Codex:      codex exec --skip-git-repo-check
-Antigravity: /Users/you/.local/bin/agy
-```
-
-Choose `auto` session mode to detect Codex or Antigravity from the command, or select
-the mode explicitly. Do not add `--ephemeral` to Codex; AgentFlow removes it because
-ephemeral threads cannot be resumed.
-
-## Persistence and automatic retries
-
-Each project stores agent configuration, run summaries, and event history in
-`.agentflow/agentflow.db`. API keys are deliberately stripped before persistence and
-remain memory-only. Reopening the same project restores its agents and run history.
-
-When a provider reports a usage limit, quota limit, HTTP 429, or a recognizable retry
-time, the affected agent enters a **waiting** state. The UI displays the reason and
-retry time; AgentFlow sleeps until that time and retries the same turn without adding
-duplicate conversation history. If no reset time is available, it uses bounded
-exponential backoff. Retry base and maximum wait are configurable per agent, and the
-run can still be stopped while waiting.
-
-Other agent errors create a recoverable checkpoint instead of ending the run. The UI
-shows **needs attention**, the failed logical turn ID, and its attempt number. Fix the
-agent configuration on the Agents tab, save it, then choose **Retry failed turn**.
-AgentFlow retries the same prompt with the same agent session and turn ID, increments
-the attempt number, and avoids adding the failed prompt twice to conversation history.
-
-Turn status is persisted in the project database, including attempts, errors, timing,
-and token usage. It is also available from `GET /runs/{run_id}/turns` for tooling and
-post-run inspection.
-
-## Human steering
-
-While a run is active, type in the steer bar at the bottom of the Live Feed tab.
-Your message is injected into the next turn for all agents to see.
-You can also Pause/Resume to inspect the workspace before letting agents continue.
