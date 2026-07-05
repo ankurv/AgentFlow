@@ -755,7 +755,13 @@ function handleEvent(ev) {
   document.getElementById('eventCount').textContent = eventCount;
 
   // Update status
-  if (ev.kind === 'phase') updateStatus('running');
+  if (ev.kind === 'phase') {
+    if (ev.data.status === 'waiting_for_continuation' || ev.data.status === 'waiting_for_approval') {
+      updateStatus('paused');
+    } else {
+      updateStatus('running');
+    }
+  }
   if (ev.kind === 'done')  { updateStatus('done'); loadRunHistory(); }
   if (ev.kind === 'error') updateStatus(ev.data.recoverable ? 'needs_attention' : 'error');
 
