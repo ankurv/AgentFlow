@@ -574,23 +574,23 @@
   <div class="panel active" id="panel-chat">
     <div class="chat-layout">
       <div class="chat-sidebar">
-        <div class="sidebar-section" style="flex:1;overflow-y:auto">
-          <div class="sidebar-label">Agents</div>
-          <div id="agentList"></div>
+        <div class="sidebar-section" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:20px;">
+          <div style="display:flex; flex-direction:column;">
+            <div class="sidebar-label">Agents</div>
+            <div id="agentList"></div>
+          </div>
+          
+          <div id="inlineTaskTracker" style="border-top: 1px solid var(--border); padding-top: 16px; display:flex; flex-direction:column;">
+            <details>
+              <summary class="sidebar-label" style="cursor:pointer; outline:none; user-select:none; margin-bottom:0">📋 Plan Tasks</summary>
+              <div id="progressTaskList" style="margin-top:10px; overflow-y: auto;">
+                <div style="color:var(--muted);font-size:12px">No tasks defined in PLAN.md yet.</div>
+              </div>
+            </details>
+          </div>
         </div>
       </div>
       <div class="feed-area">
-        <!-- Collapsible Plan Tracker -->
-        <div id="inlineTaskTracker" style="background:var(--bg2); border-bottom:1px solid var(--border); padding:14px 20px">
-          <details open>
-            <summary style="font-family:var(--heading-font); font-size:12.5px; font-weight:700; color:var(--text-muted); cursor:pointer; user-select:none; outline:none; display:flex; align-items:center; gap:6px">
-              📋 Plan Tasks & Progress
-            </summary>
-            <div id="progressTaskList" style="margin-top:10px; max-height: 180px; overflow-y: auto;">
-              <div style="color:var(--muted);font-size:12px">No tasks defined in PLAN.md yet.</div>
-            </div>
-          </details>
-        </div>
         <div class="feed" id="feed"></div>
         <div class="steer-bar" style="display:flex; flex-direction:column; gap:10px">
           <!-- Action chips (visible when idle) -->
