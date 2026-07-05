@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AgentFlow</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
@@ -558,11 +559,19 @@
           </details>
         </div>
         <div class="feed" id="feed"></div>
-        <div class="steer-bar">
-          <input id="steerInput" placeholder="Type a prompt/task here and press Enter to start the run…" onkeydown="if(event.key==='Enter')steer()">
-          <button class="btn btn-secondary" id="sendBtn" onclick="steer()">Send</button>
-          <button class="btn btn-secondary" id="pauseBtn" onclick="pauseResume()" style="display:none">Pause</button>
-          <button class="btn btn-danger" id="stopBtn" onclick="stopRun()" style="display:none">Stop</button>
+        <div class="steer-bar" style="display:flex; flex-direction:column; gap:10px">
+          <!-- Action chips (visible when idle) -->
+          <div id="debateActionChips" style="display:flex; gap:8px; flex-wrap:wrap">
+            <button class="btn btn-secondary" onclick="runChipPrompt('debate: should we use sqlite or postgres database?')" style="font-size:11px; padding:4px 10px; border-radius:20px">💬 Debate DB choice</button>
+            <button class="btn btn-secondary" onclick="runChipPrompt('discuss: best tech stack for fullstack development')" style="font-size:11px; padding:4px 10px; border-radius:20px">💬 Discuss Tech Stack</button>
+            <button class="btn btn-secondary" onclick="runChipPrompt('debate: plan user authentication and security design')" style="font-size:11px; padding:4px 10px; border-radius:20px">💬 Plan Auth Strategy</button>
+          </div>
+          <div style="display:flex; gap:10px; width:100%">
+            <input id="steerInput" placeholder="Type a prompt/task here and press Enter to start the run…" onkeydown="if(event.key==='Enter')steer()" style="flex:1">
+            <button class="btn btn-secondary" id="sendBtn" onclick="steer()">Send</button>
+            <button class="btn btn-secondary" id="pauseBtn" onclick="pauseResume()" style="display:none">Pause</button>
+            <button class="btn btn-danger" id="stopBtn" onclick="stopRun()" style="display:none">Stop</button>
+          </div>
         </div>
       </div>
     </div>
@@ -572,8 +581,10 @@
   <div class="panel" id="panel-workspace">
     <div class="ws-layout">
       <div class="ws-sidebar">
-        <div class="sidebar-label" style="margin-bottom:10px">AgentFlow state</div>
-        <button class="ws-file-btn active" onclick="loadWsFile('design')" id="wsbtn-design">🎨 DESIGN.md</button>
+        <div class="sidebar-label" style="margin-bottom:10px">Architect Dashboard</div>
+        <button class="ws-file-btn active" onclick="loadWsFile('dashboard')" id="wsbtn-dashboard">📐 Design Dashboard</button>
+        <div class="sidebar-label" style="margin:16px 0 8px">AgentFlow state</div>
+        <button class="ws-file-btn" onclick="loadWsFile('design')" id="wsbtn-design">🎨 DESIGN.md</button>
         <button class="ws-file-btn" onclick="loadWsFile('plan')" id="wsbtn-plan">📋 PLAN.md</button>
         <button class="ws-file-btn" onclick="loadWsFile('consensus')" id="wsbtn-consensus">🤝 CONSENSUS.md</button>
         <button class="ws-file-btn" onclick="loadWsFile('tests')" id="wsbtn-tests">🧪 TEST_RESULTS.md</button>
@@ -582,7 +593,29 @@
       </div>
       <div class="ws-content">
         <button class="btn btn-secondary ws-refresh" onclick="refreshWorkspace()">↻ Refresh</button>
-        <div id="wsContentContainer" style="margin-top: 4px; display:flex; flex-direction:column; flex:1; overflow:hidden">Select a file to view its contents.</div>
+        
+        <!-- Collapsible Dashboard Container -->
+        <div id="dashboardView" style="margin-top: 12px; display:flex; flex-direction:column; gap:16px; flex:1; overflow:hidden">
+          <!-- Mermaid visual map container -->
+          <div id="mermaidMapContainer" style="background:rgba(255,255,255,0.02); border:1px solid var(--border); border-radius:var(--radius); padding:20px; display:none; flex-direction:column">
+            <h4 style="font-family:var(--heading-font); margin-bottom:12px; font-size:13px; text-transform:uppercase; color:var(--text-muted)">📐 Visual Architecture Connections</h4>
+            <div id="mermaidTarget" class="mermaid" style="display:flex; justify-content:center; background:#090c12; padding:16px; border-radius:6px; overflow:auto"></div>
+          </div>
+          <!-- Side-by-side files split -->
+          <div style="display:flex; gap:16px; flex:1; overflow:hidden">
+            <div style="flex:1; display:flex; flex-direction:column; overflow:hidden">
+              <h4 style="font-family:var(--heading-font); margin-bottom:8px; font-size:12.5px; text-transform:uppercase; color:var(--text-muted)">🎨 DESIGN.md</h4>
+              <div id="designDocViewer" style="background:#090c12; border:1px solid var(--border); border-radius:var(--radius); padding:16px; font-family:var(--mono); font-size:12.5px; line-height:1.6; overflow-y:auto; flex:1">Loading design...</div>
+            </div>
+            <div style="flex:1; display:flex; flex-direction:column; overflow:hidden">
+              <h4 style="font-family:var(--heading-font); margin-bottom:8px; font-size:12.5px; text-transform:uppercase; color:var(--text-muted)">📋 PLAN.md</h4>
+              <div id="planDocViewer" style="background:#090c12; border:1px solid var(--border); border-radius:var(--radius); padding:16px; font-family:var(--mono); font-size:12.5px; line-height:1.6; overflow-y:auto; flex:1">Loading plan...</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Standard File Editor -->
+        <div id="fileViewContainer" style="margin-top: 12px; display:none; flex-direction:column; flex:1; overflow:hidden"></div>
       </div>
     </div>
   </div>
@@ -636,7 +669,7 @@ let agentColors = {};
 const COLORS = ['#818cf8','#22c55e','#14b8a6','#f97316','#eab308','#ec4899','#06b6d4'];
 let colorIdx = 0;
 let agentConfigs = []; // local copy for config panel
-let currentWsKey = 'design';
+let currentWsKey = 'dashboard';
 let paused = false;
 let projectOpen = false;
 let currentProjectPath = '';
@@ -664,7 +697,7 @@ async function openProject() {
   document.getElementById('projectPath').value = data.path;
   document.getElementById('projectState').textContent = 'Ready · project state loaded';
   document.getElementById('projectState').className = 'project-state ready';
-  currentWsKey = 'design';
+  currentWsKey = 'dashboard';
   await loadAgentConfig();
   renderHistory(data.recent_runs || []);
   await fetchAgentStatus();
@@ -963,6 +996,11 @@ function updateStatus(s) {
     }
   }
 
+  const chips = document.getElementById('debateActionChips');
+  if (chips) {
+    chips.style.display = (s === 'idle' || s === 'done' || s === 'error') ? 'flex' : 'none';
+  }
+
   const running = s === 'running' || s === 'paused' || s === 'needs_attention';
   retryBtn.style.display = s === 'needs_attention' ? '' : 'none';
   if (pauseBtn) {
@@ -972,6 +1010,11 @@ function updateStatus(s) {
   if (stopBtn) {
     stopBtn.style.display = running ? '' : 'none';
   }
+}
+
+async function runChipPrompt(prompt) {
+  document.getElementById('steerInput').value = prompt;
+  await steer();
 }
 
 async function fetchAgentStatus() {
@@ -1134,7 +1177,7 @@ function getFileIcon(f) {
 
 function renderFileContent(filename, content) {
   currentFileContent = content;
-  const container = document.getElementById('wsContentContainer');
+  const container = document.getElementById('fileViewContainer');
   if (!container) return;
 
   if (content === undefined || content === null) {
@@ -1172,24 +1215,71 @@ async function loadWsFile(key) {
   const btn = document.getElementById('wsbtn-'+key);
   if (btn) btn.classList.add('active');
   document.querySelectorAll('.ws-file-btn').forEach(b => {
-    // If the text matches key or icon + key
     if (b.textContent.includes(key)) b.classList.add('active');
   });
 
-  let content = '';
-  try {
-    if (['design','plan','consensus','tests'].includes(key)) {
-      const res = await fetch(`/workspace/file/${key}`).then(r=>r.json());
-      content = res.content;
-    } else {
-      const encoded = key.split('/').map(encodeURIComponent).join('/');
-      const res = await fetch(`/workspace/src/${encoded}`).then(r=>r.json());
-      content = res.content;
+  const dashboardView = document.getElementById('dashboardView');
+  const fileViewContainer = document.getElementById('fileViewContainer');
+
+  if (key === 'dashboard') {
+    if (dashboardView) dashboardView.style.display = 'flex';
+    if (fileViewContainer) fileViewContainer.style.display = 'none';
+
+    try {
+      const designRes = await fetch('/workspace/file/design').then(r=>r.json());
+      const planRes = await fetch('/workspace/file/plan').then(r=>r.json());
+      
+      const designViewer = document.getElementById('designDocViewer');
+      const planViewer = document.getElementById('planDocViewer');
+      
+      if (designViewer) designViewer.textContent = designRes.content || 'No design details written in DESIGN.md yet.';
+      if (planViewer) planViewer.textContent = planRes.content || 'No plan details written in PLAN.md yet.';
+
+      // Parse and Render Mermaid Diagram if present in DESIGN.md
+      const mermaidTarget = document.getElementById('mermaidTarget');
+      const mapContainer = document.getElementById('mermaidMapContainer');
+      const designContent = designRes.content || '';
+      const mermaidMatch = designContent.match(/```mermaid([\s\S]*?)```/);
+      
+      if (mermaidMatch && mermaidTarget && mapContainer) {
+        const rawGraph = mermaidMatch[1].trim();
+        mermaidTarget.removeAttribute('data-processed');
+        mermaidTarget.textContent = rawGraph;
+        mapContainer.style.display = 'flex';
+        if (window.mermaid) {
+          try {
+            mermaid.run({ nodes: [mermaidTarget] });
+          } catch (mErr) {
+            console.error("Failed to render Mermaid graph", mErr);
+            mermaidTarget.innerHTML = `<div style="color:var(--red);font-size:12px;font-family:var(--font)">Diagram parse error: ${escHtml(mErr.message)}</div>`;
+          }
+        }
+      } else if (mapContainer) {
+        mapContainer.style.display = 'none';
+        if (mermaidTarget) mermaidTarget.innerHTML = '';
+      }
+    } catch (err) {
+      console.error("Failed to load dashboard files", err);
     }
-    renderFileContent(key, content);
-  } catch (err) {
-    console.error("Failed to load file contents", err);
-    renderFileContent(key, null);
+  } else {
+    if (dashboardView) dashboardView.style.display = 'none';
+    if (fileViewContainer) fileViewContainer.style.display = 'flex';
+
+    let content = '';
+    try {
+      if (['design','plan','consensus','tests'].includes(key)) {
+        const res = await fetch(`/workspace/file/${key}`).then(r=>r.json());
+        content = res.content;
+      } else {
+        const encoded = key.split('/').map(encodeURIComponent).join('/');
+        const res = await fetch(`/workspace/src/${encoded}`).then(r=>r.json());
+        content = res.content;
+      }
+      renderFileContent(key, content);
+    } catch (err) {
+      console.error("Failed to load file contents", err);
+      renderFileContent(key, null);
+    }
   }
 }
 
@@ -1615,6 +1705,9 @@ function showTab(id, tabElement) {
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
+if (window.mermaid) {
+  mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'loose' });
+}
 connectSSE();
 loadCurrentProject();
 loadAgentConfig();

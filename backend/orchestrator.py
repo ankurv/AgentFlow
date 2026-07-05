@@ -143,7 +143,13 @@ Depending on the mode, follow these structured instructions:
 Structured workflow description:
 1. **Phase 1 (High-Level Planning & Design)**:
    - First, design a high-level task list (ideally with subtasks) and write it in PLAN.md. 
-   - Define the initial design concept in DESIGN.md.
+   - Define the initial design concept in DESIGN.md. **ALWAYS include a visual diagram of components and their connections under a "## Architecture Diagram" section using a code block tagged with "mermaid" (flowchart TD or LR). E.g.
+     ```mermaid
+     flowchart TD
+       A[Frontend] --> B[API Server]
+       B --> C[(Database)]
+     ```
+     This diagram will be drawn visually in the user's dashboard.**
    - Call other agents (by setting ## NEXT_AGENT) to review, critique, and improve this high-level task list and design.
    - Once other agents have reviewed, present the plan/design to the human user for review by outputting the next worker or pausing.
 2. **Phase 2 (Task-by-task Debate & Execution)**:
