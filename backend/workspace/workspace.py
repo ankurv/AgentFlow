@@ -65,6 +65,7 @@ class Workspace:
         names = {
             "design": "DESIGN.md", "plan": "PLAN.md",
             "consensus": "CONSENSUS.md", "tests": "TEST_RESULTS.md",
+            "questions": "QUESTIONS.md"
         }
         return self.root / names[key]
 

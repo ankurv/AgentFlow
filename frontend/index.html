@@ -620,6 +620,7 @@
         <button class="ws-file-btn" onclick="loadWsFile('design')" id="wsbtn-design">🎨 DESIGN.md</button>
         <button class="ws-file-btn" onclick="loadWsFile('plan')" id="wsbtn-plan">📋 PLAN.md</button>
         <button class="ws-file-btn" onclick="loadWsFile('consensus')" id="wsbtn-consensus">🤝 CONSENSUS.md</button>
+        <button class="ws-file-btn" onclick="loadWsFile('questions')" id="wsbtn-questions">❓ QUESTIONS.md</button>
         <button class="ws-file-btn" onclick="loadWsFile('tests')" id="wsbtn-tests">🧪 TEST_RESULTS.md</button>
         <div style="margin:16px 0 8px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Project files</div>
         <div id="srcFileList" style="display:flex;flex-direction:column;gap:3px"></div>
@@ -1405,7 +1406,10 @@ function renderFileContent(filename, content) {
   let html = `
     <div class="ws-content-header">
       <span class="ws-content-path">${escHtml(filename)}</span>
-      <button class="btn btn-secondary" onclick="navigator.clipboard.writeText(currentFileContent);notify('Copied file contents to clipboard!')" style="padding: 4px 10px; font-size: 11px">Copy</button>
+      <div style="display:flex; gap:8px;">
+        <button class="btn btn-primary" onclick="startFileEdit('${escHtml(filename)}')" style="padding: 4px 10px; font-size: 11px">Edit</button>
+        <button class="btn btn-secondary" onclick="navigator.clipboard.writeText(currentFileContent);notify('Copied file contents to clipboard!')" style="padding: 4px 10px; font-size: 11px">Copy</button>
+      </div>
     </div>
     <div class="code-editor">
   `;
@@ -1423,6 +1427,57 @@ function renderFileContent(filename, content) {
 
   html += '</div>';
   container.innerHTML = html;
+}
+
+function startFileEdit(filename) {
+  const container = document.getElementById('fileViewContainer');
+  if (!container) return;
+
+  container.innerHTML = `
+    <div class="ws-content-header">
+      <span class="ws-content-path">Editing: ${escHtml(filename)}</span>
+      <div style="display:flex; gap:8px">
+        <button class="btn btn-primary" onclick="saveFileEdit('${escHtml(filename)}')" style="padding: 4px 10px; font-size: 11px">Save</button>
+        <button class="btn btn-secondary" onclick="cancelFileEdit('${escHtml(filename)}')" style="padding: 4px 10px; font-size: 11px">Cancel</button>
+      </div>
+    </div>
+    <div class="code-editor" style="padding:0; overflow:hidden;">
+      <textarea id="fileEditArea" style="width:100%; height:100%; min-height:400px; padding:16px; border:none; background:transparent; color:var(--text); font-family:var(--mono); font-size:13px; resize:none; outline:none;" spellcheck="false"></textarea>
+    </div>
+  `;
+  document.getElementById('fileEditArea').value = currentFileContent;
+}
+
+function cancelFileEdit(filename) {
+  renderFileContent(filename, currentFileContent);
+}
+
+async function saveFileEdit(filename) {
+  const newContent = document.getElementById('fileEditArea').value;
+  const isRootFile = ['design', 'plan', 'consensus', 'tests', 'questions'].includes(filename);
+  
+  const encodedName = filename.split('/').map(encodeURIComponent).join('/');
+  const url = isRootFile ? `/workspace/file/${filename}` : `/workspace/src/${encodedName}`;
+  
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: newContent })
+    });
+    
+    if (res.ok) {
+      notify('File saved successfully!');
+      currentFileContent = newContent;
+      renderFileContent(filename, currentFileContent);
+    } else {
+      const err = await res.json();
+      alert('Failed to save file: ' + (err.detail || JSON.stringify(err)));
+    }
+  } catch (err) {
+    console.error(err);
+    alert('Failed to save file: ' + err.message);
+  }
 }
 
 async function loadWsFile(key) {
@@ -1483,7 +1538,7 @@ async function loadWsFile(key) {
 
     let content = '';
     try {
-      if (['design','plan','consensus','tests'].includes(key)) {
+      if (['design','plan','consensus','tests','questions'].includes(key)) {
         const res = await fetch(`/workspace/file/${key}`).then(r=>r.json());
         content = res.content;
       } else {

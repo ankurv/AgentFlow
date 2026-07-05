@@ -507,10 +507,24 @@ def get_workspace():
 def get_file(key: str):
     if not state.workspace:
         raise HTTPException(404, "No active workspace")
-    allowed = ["design", "plan", "consensus", "tests"]
+    allowed = ["design", "plan", "consensus", "tests", "questions"]
     if key not in allowed:
         raise HTTPException(400, f"key must be one of {allowed}")
     return {"key": key, "content": state.workspace.read(key)}
+
+
+class FileUpdateBody(BaseModel):
+    content: str
+
+@app.post("/workspace/file/{key}")
+def update_file(key: str, body: FileUpdateBody):
+    if not state.workspace:
+        raise HTTPException(404, "No active workspace")
+    allowed = ["design", "plan", "consensus", "tests", "questions"]
+    if key not in allowed:
+        raise HTTPException(400, f"key must be one of {allowed}")
+    state.workspace.write(key, body.content)
+    return {"ok": True}
 
 
 @app.get("/workspace/src/{filename:path}")
@@ -521,6 +535,17 @@ def get_src_file(filename: str):
     if filename not in src:
         raise HTTPException(404, "File not found")
     return {"filename": filename, "content": src[filename]}
+
+
+@app.post("/workspace/src/{filename:path}")
+def update_src_file(filename: str, body: FileUpdateBody):
+    if not state.workspace:
+        raise HTTPException(404, "No active workspace")
+    try:
+        state.workspace.write_src(filename, body.content)
+    except Exception as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
 
 
 @app.get("/events/history")

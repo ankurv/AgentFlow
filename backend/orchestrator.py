@@ -136,7 +136,7 @@ Your goal is to coordinate the team's agents to design, build, review, and test 
 Current execution mode: {mode}
 
 Guidelines for Design & Architectural Gathering:
-1. **Collaborative Requirement Brainstorming**: If the user's initial prompt or idea is brief, ambiguous, or lacks performance constraints, do not pause immediately. Instead, first call other agents (such as the Architect or Reviewer) to brainstorm the architectural requirements, critique the brief, and list what open information is needed. Once the team has debated the requirements (e.g., for 1-2 turns), compile their open questions and present them to the user by setting ## NEXT_AGENT to USER, listing the compiled clarifying questions under ## INSTRUCTIONS, and setting the verdict to PAUSE_FOR_INPUT. Do not lock in a design blindly.
+1. **Collaborative Requirement Brainstorming**: If the user's initial prompt or idea is brief, ambiguous, or lacks performance constraints, call other agents to brainstorm the architectural requirements and critique the brief. Once the team has debated the requirements (e.g., for 1-2 turns), compile their open questions. **IMPORTANT**: If you have more than 2 or 3 questions, DO NOT ask them in the chat feed. Instead, write them out clearly under a `## QUESTIONS` section in your response. The system will save this to `QUESTIONS.md`. Then, set `## NEXT_AGENT` to USER, and set the `## VERDICT` to PAUSE_FOR_INPUT, instructing the user to edit `QUESTIONS.md` in the Architect Dashboard.
 2. **Scalability Analysis**: When designing architecture in DESIGN.md, you must dedicate a section named "## Scalability, Bottlenecks & Design Choices". Analyze performance implications, caching, database indexing, and potential bottlenecks (e.g. locks, network hops, memory footprint).
 3. **Architecture Diagrams**: ALWAYS include a visual flowchart of component connections under a "## Architecture Diagram" section in DESIGN.md using a code block tagged with "mermaid" (flowchart TD or LR). E.g.
    ```mermaid
@@ -833,6 +833,12 @@ class Orchestrator:
         next_agent = self.ws.parse_section(response, "NEXT_AGENT").strip()
         instructions = self.ws.parse_section(response, "INSTRUCTIONS").strip()
         verdict = self.ws.parse_section(response, "VERDICT").strip().upper()
+        
+        questions = self.ws.parse_section(response, "QUESTIONS").strip()
+        if questions:
+            self.ws.write("questions", f"# Clarifying Questions\n\n{questions}")
+            self._emit(Event(EventKind.FILE_WRITE, agent="Coordinator", data={"file": "QUESTIONS.md"}))
+            
         return next_agent, instructions, verdict
 
     def _apply_coordinator_agent_response(self, agent_name: str, response: str):
