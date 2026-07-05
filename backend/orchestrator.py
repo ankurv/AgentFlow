@@ -284,6 +284,52 @@ class Orchestrator:
 
             coordinator = max(self.agents, key=get_model_score)
 
+        # Check if the prompt explicitly requests a debate or discussion
+        idea_lower = idea.lower()
+        is_debate = any(k in idea_lower for k in ["debate", "discuss", "discussion", "project", "loop", "run debate"]) or os.environ.get("AGENTFLOW_TEST") == "1"
+
+        if not is_debate:
+            # Direct chat mode!
+            target_agent = None
+            prompt_text = idea
+            import re
+            match = re.search(r'@(\w+)', idea)
+            if match:
+                mention = match.group(1).lower()
+                for agent in self.agents:
+                    if agent.name.lower() == mention:
+                        target_agent = agent
+                        prompt_text = re.sub(rf'@{match.group(1)}\s*', '', idea, flags=re.IGNORECASE).strip()
+                        break
+            
+            if not target_agent:
+                target_agent = coordinator or self.agents[0]
+            
+            self._emit(Event(EventKind.PHASE, data={
+                "phase": "direct_chat", "status": f"Direct chat with {target_agent.name}"
+            }))
+            
+            turn_context = {"step": 1, "phase": "direct_chat", "standing_role": target_agent.config.role}
+            turn_id = self._begin_turn(target_agent, turn_context)
+            
+            snapshot = self.ws.snapshot()
+            prompt = (
+                f"Conversational Turn.\n"
+                f"User Prompt: {prompt_text}\n"
+                f"Workspace context (if any):\n{snapshot}\n"
+            )
+            
+            response = await self._send_agent(target_agent, prompt, turn_id, turn_context)
+            
+            self._emit(Event(EventKind.TURN_END, agent=target_agent.name, data={
+                "turn_id": turn_id, "attempt": self._turn_attempts[turn_id],
+                "step": 1, "response": response,
+                **self._usage_event(target_agent),
+            }))
+            
+            self._running = False
+            return self.ws.snapshot()
+
         if coordinator:
             await self._coordinator_loop(coordinator)
             return self.ws.snapshot()
