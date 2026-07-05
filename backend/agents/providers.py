@@ -192,7 +192,11 @@ class CLIAgent(AgentBase):
         previous_mode = getattr(self, "_session_mode", "")
         self._argv = shlex.split(config.cli_command)
         if not self._argv:
-            raise ValueError(f"CLIAgent '{self.name}' has no cli_command configured")
+            self._session_mode = "invalid"
+            self.manages_context = False
+            if previous_mode and previous_mode != self._session_mode:
+                self._provider_session_id = ""
+            return
         requested = str(config.extra.get("session_mode", "auto")).lower()
         command = Path(self._argv[0]).name.lower()
         joined = " ".join(self._argv).lower()
@@ -230,6 +234,8 @@ class CLIAgent(AgentBase):
             raise
 
     def _raw_send(self, messages: list[dict], system: str) -> tuple[str, Usage]:
+        if self._session_mode == "invalid" or not getattr(self, "_argv", None):
+            raise RuntimeError(f"Agent '{self.name}' has no CLI command configured. Please add one in Settings.")
         if self._session_mode == "codex":
             return self._send_codex(messages[-1]["content"], system)
         if self._session_mode == "antigravity":

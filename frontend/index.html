@@ -731,6 +731,12 @@ function notify(message, isError=false) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => toast.className = 'toast', 2600);
 }
+window.onerror = function(message, source, lineno, colno, error) {
+  notify(`UI Error: ${message}`, true);
+};
+window.onunhandledrejection = function(event) {
+  notify(`Promise Rejected: ${event.reason}`, true);
+};
 
 function copyMermaidSVG() {
   const svg = document.querySelector('#mermaidTarget svg');

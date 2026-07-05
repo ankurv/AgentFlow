@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -122,22 +122,22 @@ def broadcast(event: Event):
 
 
 @app.get("/events")
-async def sse_stream():
+async def sse_stream(request: Request):
     queue: asyncio.Queue = asyncio.Queue(maxsize=200)
     state.sse_clients.append(queue)
 
     async def generator():
-        for past in state.event_log:
-            yield f"data: {json.dumps(past)}\n\n"
         try:
+            for past in state.event_log:
+                yield f"data: {json.dumps(past)}\n\n"
             while True:
+                if await request.is_disconnected():
+                    break
                 try:
-                    event = await asyncio.wait_for(queue.get(), timeout=30)
+                    event = await asyncio.wait_for(queue.get(), timeout=5)
                     yield f"data: {json.dumps(event)}\n\n"
                 except asyncio.TimeoutError:
                     yield ": keepalive\n\n"
-        except asyncio.CancelledError:
-            pass
         finally:
             if queue in state.sse_clients:
                 state.sse_clients.remove(queue)
