@@ -286,8 +286,6 @@
     <div class="chat-layout">
       <div class="chat-sidebar">
         <div class="idea-form">
-          <div class="sidebar-label">Project brief</div>
-          <textarea id="ideaInput" placeholder="Optional when the project contains AGENTFLOW.md"></textarea>
           <div style="margin-bottom:10px">
             <label style="font-size:11px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Execution Mode</label>
             <select id="runModeSelect" style="padding:6px;font-size:12px;border-radius:var(--radius);background:var(--bg3);border:1px solid var(--border);color:var(--text);width:100%;outline:none">
@@ -298,7 +296,6 @@
           </div>
           <div class="brief-tools">
             <button class="btn btn-primary" id="startBtn" onclick="startRun()">Start run</button>
-            <button class="btn btn-secondary" onclick="saveBrief()">Save AGENTFLOW.md</button>
             <button class="btn btn-secondary" onclick="clearFeed()">Clear feed</button>
           </div>
           <div style="display:none">
@@ -441,7 +438,6 @@ async function openProject() {
   document.getElementById('projectPath').value = data.path;
   document.getElementById('projectState').textContent = 'Ready · project state loaded';
   document.getElementById('projectState').className = 'project-state ready';
-  document.getElementById('ideaInput').value = data.brief || '';
   currentWsKey = 'design';
   await loadAgentConfig();
   renderHistory(data.recent_runs || []);
@@ -458,22 +454,8 @@ async function loadCurrentProject() {
   document.getElementById('projectPath').value = data.path;
   document.getElementById('projectState').textContent = 'Ready · project state loaded';
   document.getElementById('projectState').className = 'project-state ready';
-  document.getElementById('ideaInput').value = data.brief || '';
   renderHistory(data.recent_runs || []);
   await loadAgentConfig();
-}
-
-async function saveBrief() {
-  if (!projectOpen) { notify('Open a project first', true); return; }
-  const content = document.getElementById('ideaInput').value.trim();
-  if (!content) { notify('Write a project brief first', true); return; }
-  const response = await fetch('/project/brief', {
-    method:'PUT', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({content})
-  });
-  const data = await response.json();
-  if (!response.ok) { notify(data.detail || 'Could not save brief', true); return; }
-  notify('AGENTFLOW.md saved');
 }
 
 // ── SSE connection ───────────────────────────────────────────────────────────
@@ -590,18 +572,29 @@ function escAttr(s) {
 }
 
 // ── Run controls ─────────────────────────────────────────────────────────────
-async function startRun() {
-  const idea = document.getElementById('ideaInput').value.trim();
+async function startRun(prompt) {
+  let idea = prompt;
+  if (idea === undefined) {
+    idea = document.getElementById('steerInput').value.trim();
+    document.getElementById('steerInput').value = '';
+  }
+
+  if (!idea) {
+    notify('Please type a prompt/task in the bottom chat input to start the run.', true);
+    return;
+  }
+
   if (!projectOpen) {
     const opened = await openProject();
     if (!opened) return;
   }
 
   const agents = await fetch('/agents').then(r=>r.json());
-  if (!agents.agents?.length) { notify('Add at least one agent in the Agents tab', true); return; }
+  const mergedAgents = agents.merged || [];
+  if (!mergedAgents.length) { notify('Add at least one agent in the Agents tab', true); return; }
 
   // Assign colors
-  agents.agents.forEach(a => {
+  mergedAgents.forEach(a => {
     if (!agentColors[a.name]) agentColors[a.name] = COLORS[colorIdx++ % COLORS.length];
   });
 
@@ -677,11 +670,17 @@ async function stopRun() {
 async function steer() {
   const msg = document.getElementById('steerInput').value.trim();
   if (!msg) return;
-  await fetch('/run/steer', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({message: msg})
-  });
-  document.getElementById('steerInput').value = '';
+
+  if (appStatus === 'idle' || appStatus === 'done' || appStatus === 'error') {
+    document.getElementById('steerInput').value = '';
+    await startRun(msg);
+  } else {
+    await fetch('/run/steer', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({message: msg})
+    });
+    document.getElementById('steerInput').value = '';
+  }
 }
 
 function updateStatus(s) {
@@ -708,6 +707,15 @@ function updateStatus(s) {
     }[s] || 'var(--muted, #8e9cae)';
     pDot.style.background = color;
     pTxt.textContent = s.charAt(0).toUpperCase() + s.slice(1).replace('_', ' ');
+  }
+
+  const steerInput = document.getElementById('steerInput');
+  if (steerInput) {
+    if (s === 'idle' || s === 'done' || s === 'error') {
+      steerInput.placeholder = 'Type a prompt/task here and press Enter to start the run…';
+    } else {
+      steerInput.placeholder = 'Steer agents — inject a message into the active run…';
+    }
   }
 
   const running = s === 'running' || s === 'paused' || s === 'needs_attention';
