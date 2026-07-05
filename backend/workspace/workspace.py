@@ -161,8 +161,9 @@ class Workspace:
 
     @staticmethod
     def parse_section(text: str, header: str) -> str:
-        pattern = rf"## {re.escape(header)}\n(.*?)(?=\n## |\Z)"
-        match = re.search(pattern, text, re.DOTALL)
+        # Matches "## HEADER", "## HEADER:", "## HEADER \n", etc.
+        pattern = rf"##\s*{re.escape(header)}[:\s]*(.*?)(?=\n## |\Z)"
+        match = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
         return match.group(1).strip() if match else ""
 
     @staticmethod

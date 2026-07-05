@@ -264,7 +264,10 @@ class Orchestrator:
         if n == 0:
             return self.ws.snapshot()
 
-        coordinator = next((a for a in self.agents if a.config.extra.get("is_coordinator")), None)
+        coordinator = next(
+            (a for a in self.agents if "coordinator" in a.config.role.lower() or "coordinator" in a.config.name.lower()),
+            None
+        )
         if not coordinator and not os.environ.get("AGENTFLOW_TEST"):
             # Pick the best model as the coordinator
             def get_model_score(agent: AgentBase) -> int:
@@ -752,10 +755,11 @@ class Orchestrator:
             new_steering = await self._drain_steer()
             steer_block = f"\n\n[HUMAN STEERING]\n{new_steering}" if new_steering else ""
             seed_block = f"\n\nProduct idea: {self.idea}" if step == 1 else ""
+            agent_feedback_block = f"\n\n[LAST AGENT REPLY]\n{self._last_agent_feedback}" if getattr(self, "_last_agent_feedback", None) else ""
 
             prompt = (
                 f"Coordinator execution step {step}/{max_steps}.\n"
-                f"Current Workspace snapshot:\n{delta}{steer_block}{seed_block}\n\n"
+                f"Current Workspace snapshot:\n{delta}{steer_block}{seed_block}{agent_feedback_block}\n\n"
                 "Determine the NEXT_AGENT to run, provide INSTRUCTIONS, and state the VERDICT (CONTINUE or COMPLETE)."
             )
 
@@ -788,8 +792,9 @@ class Orchestrator:
                     continue
                 break
 
-            # Find selected agent
-            selected_agent = next((a for a in other_agents if a.name.lower() == next_agent_name.lower()), None)
+            # Sanitize the name in case the LLM wrapped it in **bold** or `code` tags
+            clean_name = next_agent_name.replace('*', '').replace('`', '').strip().lower()
+            selected_agent = next((a for a in other_agents if a.name.lower() == clean_name), None)
             if not selected_agent:
                 error_msg = f"Coordinator selected invalid agent: '{next_agent_name}'"
                 self._emit(Event(EventKind.ERROR, agent=coordinator.name, data={"error": error_msg}))
@@ -810,6 +815,7 @@ class Orchestrator:
             agent_turn_id = self._begin_turn(selected_agent, agent_turn_context)
 
             agent_response = await self._send_agent(selected_agent, agent_prompt, agent_turn_id, agent_turn_context)
+            self._last_agent_feedback = f"{selected_agent.name} said:\n{agent_response}"
 
             self._apply_coordinator_agent_response(selected_agent.name, agent_response)
 
