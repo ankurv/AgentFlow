@@ -450,8 +450,6 @@
   </div>
   <div class="spacer"></div>
   <button class="header-btn" onclick="retryFailedTurn()" id="retryBtn" style="display:none">Retry failed turn</button>
-  <button class="header-btn" onclick="pauseResume()" id="pauseBtn" style="display:none">Pause</button>
-  <button class="header-btn danger" onclick="stopRun()" id="stopBtn" style="display:none">Stop</button>
 </header>
 
 <div class="project-strip">
@@ -474,26 +472,6 @@
   <div class="panel active" id="panel-chat">
     <div class="chat-layout">
       <div class="chat-sidebar">
-        <div class="idea-form">
-          <div style="margin-bottom:10px">
-            <label style="font-size:11px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Execution Mode</label>
-            <select id="runModeSelect" style="padding:6px;font-size:12px;border-radius:var(--radius);background:var(--bg3);border:1px solid var(--border);color:var(--text);width:100%;outline:none">
-              <option value="all">Full (Debate + Build)</option>
-              <option value="debate">Debate/Design Only</option>
-              <option value="build">Build/Implementation Only</option>
-            </select>
-          </div>
-          <div class="brief-tools">
-            <button class="btn btn-primary" id="startBtn" onclick="startRun()">Start run</button>
-            <button class="btn btn-secondary" onclick="clearFeed()">Clear feed</button>
-          </div>
-          <div style="display:none">
-            <input type="number" id="debateRounds" value="20" min="1" max="20" style="width:60px" title="Debate rounds">
-            <label style="align-self:center;font-size:11px">rounds</label>
-            <input type="number" id="buildIters" value="10" min="1" max="10" style="width:60px" title="Build iterations">
-            <label style="align-self:center;font-size:11px">iters</label>
-          </div>
-        </div>
         <div class="sidebar-section" style="flex:1;overflow-y:auto">
           <div class="sidebar-label">Agents</div>
           <div id="agentList"></div>
@@ -502,8 +480,10 @@
       <div class="feed-area">
         <div class="feed" id="feed"></div>
         <div class="steer-bar">
-          <input id="steerInput" placeholder="Steer agents — inject a message into the active run…" onkeydown="if(event.key==='Enter')steer()">
-          <button class="btn btn-secondary" onclick="steer()">Send</button>
+          <input id="steerInput" placeholder="Type a prompt/task here and press Enter to start the run…" onkeydown="if(event.key==='Enter')steer()">
+          <button class="btn btn-secondary" id="sendBtn" onclick="steer()">Send</button>
+          <button class="btn btn-secondary" id="pauseBtn" onclick="pauseResume()" style="display:none">Pause</button>
+          <button class="btn btn-danger" id="stopBtn" onclick="stopRun()" style="display:none">Stop</button>
         </div>
       </div>
       <div class="progress-pane" id="progressPane">
@@ -772,6 +752,7 @@ function escAttr(s) {
 }
 
 // ── Run controls ─────────────────────────────────────────────────────────────
+// ── Run controls ─────────────────────────────────────────────────────────────
 async function startRun(prompt) {
   let idea = prompt;
   if (idea === undefined) {
@@ -798,6 +779,15 @@ async function startRun(prompt) {
     if (!agentColors[a.name]) agentColors[a.name] = COLORS[colorIdx++ % COLORS.length];
   });
 
+  // Extract execution mode from prompt instructions
+  let mode = "all";
+  const ideaLower = idea.toLowerCase();
+  if (ideaLower.includes("debate only") || ideaLower.includes("design only") || (ideaLower.includes("debate") && !ideaLower.includes("build") && !ideaLower.includes("implement"))) {
+    mode = "debate";
+  } else if (ideaLower.includes("build only") || ideaLower.includes("implement only") || (ideaLower.includes("build") && !ideaLower.includes("debate") && !ideaLower.includes("design"))) {
+    mode = "build";
+  }
+
   totalTokens = 0;
   totalCost = 0;
   eventCount = 0;
@@ -816,9 +806,9 @@ async function startRun(prompt) {
     body: JSON.stringify({
       idea,
       project_path: currentProjectPath,
-      max_debate_rounds: parseInt(document.getElementById('debateRounds').value) || 4,
-      max_build_iterations: parseInt(document.getElementById('buildIters').value) || 3,
-      mode: document.getElementById('runModeSelect').value,
+      max_debate_rounds: 20,
+      max_build_iterations: 10,
+      mode: mode,
     })
   });
   const data = await res.json();
@@ -920,8 +910,13 @@ function updateStatus(s) {
 
   const running = s === 'running' || s === 'paused' || s === 'needs_attention';
   retryBtn.style.display = s === 'needs_attention' ? '' : 'none';
-  pauseBtn.style.display = (s === 'running' || s === 'paused') ? '' : 'none';
-  stopBtn.style.display  = running ? '' : 'none';
+  if (pauseBtn) {
+    pauseBtn.style.display = (s === 'running' || s === 'paused') ? '' : 'none';
+    pauseBtn.textContent = s === 'paused' ? 'Resume' : 'Pause';
+  }
+  if (stopBtn) {
+    stopBtn.style.display = running ? '' : 'none';
+  }
 }
 
 async function fetchAgentStatus() {
