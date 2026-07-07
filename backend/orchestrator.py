@@ -241,6 +241,8 @@ class Orchestrator:
         self._turn_attempts: dict[str, int] = {}
         self._failed_turn: dict[str, Any] | None = None
         self._recovery_event = asyncio.Event()
+        self.run_token_total = 0
+        self._budget_exhausted = False
 
         if self.restore:
             self.load_state()
@@ -258,6 +260,7 @@ class Orchestrator:
     async def steer(self, message: str):
         """Inject a human message that all agents will see next turn."""
         await self._steer_queue.put(message)
+        self.ws.clear_questions()
         self._emit(Event(EventKind.STEER, agent="human", data={"message": message}))
 
     def stop(self):
@@ -295,7 +298,7 @@ class Orchestrator:
             return self.ws.snapshot()
 
         coordinator = next(
-            (a for a in self.agents if "coordinator" in a.config.role.lower() or "coordinator" in a.config.name.lower()),
+            (a for a in self.agents if "coordinator" in (a.config.role or "").lower() or "coordinator" in (a.config.name or "").lower() or a.config.extra.get("is_coordinator")),
             None
         )
         if not coordinator and not os.environ.get("AGENTFLOW_TEST"):
@@ -367,12 +370,15 @@ class Orchestrator:
             )
             
             response = await self._send_agent(target_agent, prompt, turn_id, turn_context)
+            self._record_turn_usage(target_agent)
             
             self._emit(Event(EventKind.TURN_END, agent=target_agent.name, data={
                 "turn_id": turn_id, "attempt": self._turn_attempts[turn_id],
                 "step": 1, "response": response,
                 **self._usage_event(target_agent),
             }))
+            if self._enforce_token_budget("direct_chat", {"step": 1, "agent": target_agent.name}):
+                return self.ws.snapshot()
             
             self._running = False
             return self.ws.snapshot()
@@ -449,6 +455,7 @@ class Orchestrator:
                 turn_id = self._begin_turn(agent, turn_context)
 
                 response = await self._send_agent(agent, prompt, turn_id, turn_context)
+                self._record_turn_usage(agent)
 
                 self._apply_debate_response(agent.name, round_num, response)
                 vote = self.ws.parse_vote(response)
@@ -459,6 +466,8 @@ class Orchestrator:
                     "round": round_num, "response": response,
                     **self._usage_event(agent),
                 }))
+                if self._enforce_token_budget("debate", {"round": round_num, "agent": agent.name}):
+                    return
                 self._emit(Event(EventKind.VOTE, agent=agent.name,
                                  data={"vote": vote, "round": round_num}))
 
@@ -554,6 +563,7 @@ class Orchestrator:
                 turn_id = self._begin_turn(agent, turn_context)
 
                 response = await self._send_agent(agent, prompt, turn_id, turn_context)
+                self._record_turn_usage(agent)
 
                 verdict = self._apply_build_response(agent.name, role, iteration, response)
                 verdicts[role] = verdict
@@ -564,6 +574,8 @@ class Orchestrator:
                     "response": response,
                     **self._usage_event(agent),
                 }))
+                if self._enforce_token_budget("build", {"iteration": iteration, "role": role, "agent": agent.name}):
+                    return
                 self._emit(Event(EventKind.VERDICT, agent=agent.name,
                                  data={"role": role, "verdict": verdict, "iteration": iteration}))
 
@@ -612,6 +624,7 @@ class Orchestrator:
         state = {
             "mode": self.mode,
             "turn_sequence": self._turn_sequence,
+            "run_token_total": self.run_token_total,
             "agents": {
                 a.name: [
                     {
@@ -636,6 +649,7 @@ class Orchestrator:
             state = json.loads(state_file.read_text())
             self.mode = state.get("mode", self.mode)
             self._turn_sequence = state.get("turn_sequence", 0)
+            self.run_token_total = int(state.get("run_token_total", 0) or 0)
             
             agent_states = state.get("agents", {})
             for a in self.agents:
@@ -669,8 +683,7 @@ class Orchestrator:
         }))
         return turn_id
 
-    @staticmethod
-    def _usage_event(agent: AgentBase) -> dict:
+    def _usage_event(self, agent: AgentBase) -> dict:
         usage = agent.last_usage.to_dict()
         cost = agent._cost(agent.last_usage)
         _, _, _, known = agent._pricing()
@@ -680,6 +693,8 @@ class Orchestrator:
             "agent_totals": agent.usage_dict(),
             "cost_usd": cost,
             "pricing_known": known,
+            "run_total_tokens": self.run_token_total,
+            "run_max_tokens": self.max_tokens,
         }
 
     @staticmethod
@@ -811,6 +826,41 @@ class Orchestrator:
             msgs.append(await self._steer_queue.get())
         return "\n".join(msgs)
 
+    def _record_turn_usage(self, agent: AgentBase):
+        self.run_token_total += agent.last_usage.total_tokens
+
+    def _enforce_token_budget(self, phase: str, context: Optional[dict] = None) -> bool:
+        if self.max_tokens <= 0 or self.run_token_total < self.max_tokens:
+            return False
+
+        self._budget_exhausted = True
+        self._running = False
+        self._pause_event.set()
+        payload = {
+            "phase": phase,
+            "status": "budget_exhausted",
+            "run_total_tokens": self.run_token_total,
+            "run_max_tokens": self.max_tokens,
+        }
+        if context:
+            payload.update(context)
+        self._emit(Event(EventKind.PHASE, data=payload))
+        return True
+
+    @staticmethod
+    def _quality_gate_passed(quality_gate: str) -> bool:
+        if not quality_gate.strip():
+            return False
+        first_line = quality_gate.strip().splitlines()[0].strip().upper()
+        return first_line == "PASS"
+
+    def _coordinator_completion_errors(self, quality_gate: str) -> list[str]:
+        errors = []
+        if not self._quality_gate_passed(quality_gate):
+            errors.append("Coordinator QUALITY_GATE must start with PASS before completion.")
+        errors.extend(self.ws.validate_planning_artifacts())
+        return errors
+
     async def _coordinator_loop(self, coordinator: AgentBase):
         other_agents = [a for a in self.agents if a.name != coordinator.name]
         agents_list = "\n".join(f"- {a.name}: {a.config.role or 'Contributor'}" for a in other_agents)
@@ -844,6 +894,7 @@ class Orchestrator:
             turn_id = self._begin_turn(coordinator, turn_context)
 
             response = await self._send_agent(coordinator, prompt, turn_id, turn_context)
+            self._record_turn_usage(coordinator)
 
             # Apply coordinator's own plan/design updates or file writes
             self._apply_coordinator_agent_response(coordinator.name, response)
@@ -853,8 +904,26 @@ class Orchestrator:
                 "step": step, "response": response,
                 **self._usage_event(coordinator),
             }))
+            if self._enforce_token_budget("coordinator", {"step": step, "agent": coordinator.name}):
+                break
 
-            next_agent_name, instructions, verdict = self._parse_coordinator_response(response)
+            parsed = self._parse_coordinator_response(response)
+            next_agent_name = parsed["next_agent"]
+            instructions = parsed["instructions"]
+            verdict = parsed["verdict"]
+            completion_errors = parsed["completion_errors"]
+            if completion_errors:
+                self._emit(Event(EventKind.PHASE, data={
+                    "phase": "coordinator",
+                    "status": "quality_gate_failed",
+                    "step": step,
+                    "errors": completion_errors,
+                }))
+                self._last_agent_feedback = (
+                    "System validation blocked completion.\n"
+                    + "\n".join(f"- {error}" for error in completion_errors)
+                )
+                continue
             
             # Loop detection
             if verdict == "CONTINUE":
@@ -904,6 +973,7 @@ class Orchestrator:
             agent_turn_id = self._begin_turn(selected_agent, agent_turn_context)
 
             agent_response = await self._send_agent(selected_agent, agent_prompt, agent_turn_id, agent_turn_context)
+            self._record_turn_usage(selected_agent)
             self._last_agent_feedback = f"{selected_agent.name} said:\n{agent_response}"
 
             self._apply_coordinator_agent_response(selected_agent.name, agent_response)
@@ -913,21 +983,29 @@ class Orchestrator:
                 "step": step, "response": agent_response,
                 **self._usage_event(selected_agent),
             }))
+            if self._enforce_token_budget("coordinator_agent", {"step": step, "agent": selected_agent.name}):
+                break
 
 
 
         coordinator.config.system_prompt = orig_system
 
-    def _parse_coordinator_response(self, response: str) -> tuple[str, str, str]:
+    def _parse_coordinator_response(self, response: str) -> dict[str, Any]:
         next_agent = self.ws.parse_section(response, "NEXT_AGENT").strip()
         instructions = self.ws.parse_section(response, "INSTRUCTIONS").strip()
         verdict = self.ws.parse_section(response, "VERDICT").strip().upper()
-        
-        # Quality Gate Check
+        completion_errors: list[str] = []
+
+        if verdict == "PAUSE":
+            verdict = "PAUSE_FOR_INPUT"
+        if verdict not in {"CONTINUE", "COMPLETE", "PAUSE_FOR_INPUT"}:
+            raise RuntimeError(
+                "Coordinator VERDICT must be CONTINUE, COMPLETE, or PAUSE_FOR_INPUT."
+            )
+
         if verdict == "COMPLETE":
             quality_gate = self.ws.parse_section(response, "QUALITY_GATE").strip()
-            if not quality_gate or "FAIL" in quality_gate.upper():
-                raise RuntimeError("VERDICT was COMPLETE, but QUALITY_GATE was missing or FAILED. You must provide a passing QUALITY_GATE before completing the plan.")
+            completion_errors = self._coordinator_completion_errors(quality_gate)
                 
         # Decision Checkpoint Check
         if verdict == "PAUSE_FOR_INPUT":
@@ -941,8 +1019,18 @@ class Orchestrator:
         if questions:
             self.ws.write("questions", f"# Clarifying Questions\n\n{questions}")
             self._emit(Event(EventKind.FILE_WRITE, agent="Coordinator", data={"file": "QUESTIONS.md"}))
-            
-        return next_agent, instructions, verdict
+
+        if verdict == "CONTINUE" and not next_agent:
+            raise RuntimeError("Coordinator must provide NEXT_AGENT when continuing.")
+        if verdict == "CONTINUE" and not instructions:
+            raise RuntimeError("Coordinator must provide INSTRUCTIONS when continuing.")
+
+        return {
+            "next_agent": next_agent,
+            "instructions": instructions,
+            "verdict": verdict,
+            "completion_errors": completion_errors,
+        }
 
     def _apply_coordinator_agent_response(self, agent_name: str, response: str):
         for filename, content in self.ws.parse_files(response).items():
@@ -958,6 +1046,11 @@ class Orchestrator:
         design_update = self.ws.parse_section(response, "DESIGN_UPDATE")
         if design_update:
             self.ws.write("design", f"# Architecture Design\n\n{design_update}")
+            self._emit(Event(EventKind.FILE_WRITE, agent=agent_name, data={"file": "DESIGN.md"}))
+
+        design_bit = self.ws.parse_section(response, "DESIGN_APPEND")
+        if design_bit:
+            self.ws.append("design", design_bit, agent_name, "Coordinator-led Turn")
             self._emit(Event(EventKind.FILE_WRITE, agent=agent_name, data={"file": "DESIGN.md"}))
 
         test_bit = self.ws.parse_section(response, "TEST_RESULTS_APPEND")

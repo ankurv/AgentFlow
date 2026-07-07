@@ -13,6 +13,31 @@ class Workspace:
     """A real project folder plus an internal ``.agentflow`` control area."""
 
     FILES = ["design", "plan", "consensus", "tests"]
+    PROTOCOL_HEADERS = [
+        "SUMMON_REASON",
+        "EXPECTED_CONTRIBUTION",
+        "NEXT_AGENT",
+        "INSTRUCTIONS",
+        "DECISION_CHECKPOINT",
+        "QUALITY_GATE",
+        "QUESTIONS",
+        "VERDICT",
+        "DESIGN_UPDATE",
+        "DESIGN_APPEND",
+        "PLAN_UPDATE",
+        "CONSENSUS_APPEND",
+        "TEST_RESULTS_APPEND",
+    ]
+    REQUIRED_PLAN_HEADERS = [
+        "Requirements",
+        "Non-Goals",
+        "Assumptions",
+        "Alternatives",
+        "Decisions",
+        "Risks",
+        "Acceptance Criteria",
+        "Implementation Phases",
+    ]
     EXCLUDED_PARTS = {
         ".agentflow", ".git", ".hg", ".svn", "node_modules", "vendor",
         ".venv", "venv", "__pycache__", ".pytest_cache", ".mypy_cache",
@@ -76,6 +101,11 @@ class Workspace:
     def write(self, key: str, content: str):
         self.ensure()
         self._file(key).write_text(content)
+
+    def clear_questions(self):
+        path = self._file("questions")
+        if path.exists():
+            path.unlink()
 
     def append(self, key: str, section: str, agent: str, label: str = ""):
         ts = datetime.now(timezone.utc).strftime("%H:%M:%S")
@@ -161,9 +191,42 @@ class Workspace:
         return "\n\n".join(parts)
 
     @staticmethod
+    def _has_markdown_h2(text: str, heading: str) -> bool:
+        pattern = rf"^##\s*{re.escape(heading)}\s*$"
+        return re.search(pattern, text, re.MULTILINE) is not None
+
+    def validate_planning_artifacts(self) -> list[str]:
+        errors: list[str] = []
+        plan = self.read("plan")
+        design = self.read("design")
+
+        missing_headers = [
+            heading for heading in self.REQUIRED_PLAN_HEADERS
+            if not self._has_markdown_h2(plan, heading)
+        ]
+        if missing_headers:
+            errors.append(
+                "PLAN.md is missing required headers: " + ", ".join(missing_headers)
+            )
+
+        if "```mermaid" not in design.lower() or "```" not in design:
+            errors.append("DESIGN.md must include at least one Mermaid diagram block.")
+
+        questions_path = self._file("questions")
+        if questions_path.exists():
+            questions = questions_path.read_text(errors="replace").strip()
+            if questions and questions not in {"# Clarifying Questions", "# Decision Checkpoint"}:
+                errors.append("QUESTIONS.md still contains unresolved user decisions.")
+
+        return errors
+
+    @staticmethod
     def parse_section(text: str, header: str) -> str:
-        # Matches "## HEADER", "## HEADER:", "## HEADER \n", etc.
-        pattern = rf"##\s*{re.escape(header)}[:\s]*(.*?)(?=\n## |\Z)"
+        protocol_headers = "|".join(re.escape(name) for name in Workspace.PROTOCOL_HEADERS)
+        pattern = (
+            rf"##\s*{re.escape(header)}[:\s]*"
+            rf"(.*?)(?=\n##\s*(?:{protocol_headers})[:\s]|\Z)"
+        )
         match = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
         return match.group(1).strip() if match else ""
 

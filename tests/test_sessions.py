@@ -77,6 +77,44 @@ class RepairableFake(StatefulFake):
         return super()._raw_send(messages, system)
 
 
+VALID_PLAN = """## Requirements
+- define the product
+
+## Non-Goals
+- no implementation
+
+## Assumptions
+- single-user planning workflow
+
+## Alternatives
+- sqlite
+- postgres
+
+## Decisions
+- start with sqlite
+
+## Risks
+- changing requirements
+
+## Acceptance Criteria
+- plan is actionable
+
+## Implementation Phases
+- phase 1 planning
+"""
+
+VALID_DESIGN = """## Architecture
+```mermaid
+flowchart TD
+    Idea --> Plan
+    Plan --> Review
+```
+
+## Notes
+Initial architecture.
+"""
+
+
 class SessionTests(unittest.TestCase):
     def test_stateful_agent_sends_only_new_turn_and_tracks_cost(self):
         agent = StatefulFake(
@@ -512,7 +550,7 @@ PASS
             self.assertEqual(len(agent.received), 9)
 
     def test_coordinator_orchestrated_loop(self):
-        boss_response_1 = """## NEXT_AGENT
+        boss_response_1 = f"""## NEXT_AGENT
 worker
 
 ## INSTRUCTIONS
@@ -522,12 +560,10 @@ write main script
 CONTINUE
 
 ## PLAN_UPDATE
-- [ ] Task 1
-  - [ ] Subtask 1a
-- [ ] Task 2
+{VALID_PLAN}
 
-## DESIGN_APPEND
-Initial architecture.
+## DESIGN_UPDATE
+{VALID_DESIGN}
 """
         boss_response_2 = """## NEXT_AGENT
 worker
@@ -537,13 +573,14 @@ finish task
 
 ## VERDICT
 COMPLETE
+
+## QUALITY_GATE
+PASS
 """
-        worker_response = """## FILE: src/main.py
+        worker_response = f"""## FILE: src/main.py
 print('hello world')
 ## PLAN_UPDATE
-- [ ] Task 1
-  - [x] build script
-- [ ] Task 2
+{VALID_PLAN}
 """
         boss = StatefulFake(
             AgentConfig(name="boss", kind="openai", model="gpt-4o", extra={"is_coordinator": True}),
@@ -560,13 +597,15 @@ print('hello world')
                 workspace=Workspace(directory),
                 require_approval=False,
             )
+            
             asyncio.run(orchestrator.run("build tiny product"))
+
 
             self.assertEqual(len(boss.received), 2)
             self.assertEqual(len(worker.received), 1)
             self.assertIn("write main script", worker.received[0][0]["content"])
             self.assertEqual(orchestrator.ws.read_src()["src/main.py"], "print('hello world')")
-            self.assertIn("Task 1", orchestrator.ws.read("plan"))
+            self.assertIn("Requirements", orchestrator.ws.read("plan"))
             self.assertIn("Initial architecture", orchestrator.ws.read("design"))
 
     def test_global_agents_endpoints(self):
@@ -579,6 +618,10 @@ print('hello world')
 
             try:
                 client = TestClient(backend.server.app)
+                res = client.post("/auth/login", json={"username": "admin", "password": "admin123"})
+                self.assertEqual(res.status_code, 200)
+                res = client.post("/auth/login", json={"username": "admin", "password": "admin123"})
+                self.assertEqual(res.status_code, 200)
 
                 res = client.get("/agents/global")
                 self.assertEqual(res.status_code, 200)
@@ -660,8 +703,8 @@ print('hello world')
 
     def test_execution_modes(self):
         boss = StatefulFake(
-            AgentConfig(name="boss", kind="openai", model="gpt-4o"),
-            replies=["## VERDICT\nCONTINUE"]
+            AgentConfig(name="boss", kind="openai", model="gpt-4o", extra={"is_coordinator": True}),
+            replies=[f"## NEXT_AGENT\nboss\n## INSTRUCTIONS\nfinalize the planning package\n## QUALITY_GATE\nPASS\n## PLAN_UPDATE\n{VALID_PLAN}\n## DESIGN_UPDATE\n{VALID_DESIGN}\n## VERDICT\nCOMPLETE"]
         )
         with tempfile.TemporaryDirectory() as directory:
             orchestrator = Orchestrator(
@@ -679,10 +722,10 @@ print('hello world')
 
     def test_coordinator_pause_for_input(self):
         boss = StatefulFake(
-            AgentConfig(name="boss", kind="openai", model="gpt-4o"),
+            AgentConfig(name="boss", kind="openai", model="gpt-4o", extra={"is_coordinator": True}),
             replies=[
-                "## NEXT_AGENT\nUSER\n## INSTRUCTIONS\nWhich db?\n## VERDICT\nPAUSE_FOR_INPUT",
-                "## NEXT_AGENT\nboss\n## INSTRUCTIONS\nFinished db question\n## VERDICT\nCOMPLETE"
+                "## NEXT_AGENT\nUSER\n## INSTRUCTIONS\nWhich db?\n## DECISION_CHECKPOINT\nsqlite or pg\n## VERDICT\nPAUSE_FOR_INPUT",
+                f"## NEXT_AGENT\nboss\n## INSTRUCTIONS\nFinished db question\n## QUALITY_GATE\nPASS\n## PLAN_UPDATE\n{VALID_PLAN}\n## DESIGN_UPDATE\n{VALID_DESIGN}\n## VERDICT\nCOMPLETE"
             ]
         )
         with tempfile.TemporaryDirectory() as directory:
@@ -711,6 +754,69 @@ print('hello world')
             
             asyncio.run(run_test())
 
+    def test_quality_gate_validation_retries_until_plan_is_complete(self):
+        boss = StatefulFake(
+            AgentConfig(name="boss", kind="openai", model="gpt-4o", extra={"is_coordinator": True}),
+            replies=[
+                "## NEXT_AGENT\nboss\n## INSTRUCTIONS\nfinalize now\n## QUALITY_GATE\nPASS\n## VERDICT\nCOMPLETE",
+                f"## NEXT_AGENT\nboss\n## INSTRUCTIONS\nfinalize after fixing validation feedback\n## QUALITY_GATE\nPASS\n## PLAN_UPDATE\n{VALID_PLAN}\n## DESIGN_UPDATE\n{VALID_DESIGN}\n## VERDICT\nCOMPLETE",
+            ]
+        )
+        events = []
+
+        with tempfile.TemporaryDirectory() as directory:
+            orchestrator = Orchestrator(
+                agents=[boss],
+                workspace=Workspace(directory),
+                require_approval=False,
+                mode="debate",
+                event_cb=events.append,
+            )
+
+            asyncio.run(orchestrator.run("debate product design"))
+
+            self.assertEqual(len(boss.received), 2)
+            self.assertTrue(any(
+                event.kind.value == "phase" and event.data.get("status") == "quality_gate_failed"
+                for event in events
+            ))
+            self.assertIn("Requirements", orchestrator.ws.read("plan"))
+            self.assertIn("```mermaid", orchestrator.ws.read("design"))
+
+    def test_run_token_budget_stops_after_budget_is_hit(self):
+        debate = """## DESIGN_APPEND
+design
+## PLAN_UPDATE
+- [ ] build
+## CONSENSUS_APPEND
+not ready yet
+VOTE: DISAGREE
+"""
+        agent = StatefulFake(
+            AgentConfig(name="solo", kind="openai", model="gpt-4o"),
+            replies=[debate, debate],
+        )
+        events = []
+
+        with tempfile.TemporaryDirectory() as directory:
+            orchestrator = Orchestrator(
+                agents=[agent],
+                workspace=Workspace(directory),
+                max_debate_rounds=2,
+                max_tokens=120,
+                require_approval=False,
+                event_cb=events.append,
+            )
+
+            asyncio.run(orchestrator.run("debate product design"))
+
+            self.assertEqual(len(agent.received), 1)
+            self.assertEqual(orchestrator.run_token_total, 120)
+            self.assertTrue(any(
+                event.kind.value == "phase" and event.data.get("status") == "budget_exhausted"
+                for event in events
+            ))
+
     def test_global_plus_project_configs(self):
         from fastapi.testclient import TestClient
         import backend.server
@@ -721,6 +827,8 @@ print('hello world')
 
             try:
                 client = TestClient(backend.server.app)
+                res = client.post("/auth/login", json={"username": "admin", "password": "admin123"})
+                self.assertEqual(res.status_code, 200)
 
                 # 1. Create a Global Agent
                 global_agent = {
@@ -744,7 +852,11 @@ print('hello world')
                 self.assertEqual(res.json()["agent"]["system_prompt"], "updated global system")
 
                 # 3. Simulate opening a project and adding a project-level agent via POST /agents
-                backend.server.state.open_project(tmpdir)
+                payload = {"path": tmpdir}
+                res = client.post("/project/open", json=payload)
+                self.assertEqual(res.status_code, 200)
+                session_cookie = client.cookies.get("session_id")
+                client.cookies.set("session_id", session_cookie)
                 local_agent = {
                     "name": "Standard Dev",  # Name collision!
                     "kind": "openai",
@@ -784,8 +896,9 @@ print('hello world')
         from fastapi.testclient import TestClient
         import backend.server
         from unittest.mock import patch, MagicMock
-
         client = TestClient(backend.server.app)
+        res = client.post("/auth/login", json={"username": "admin", "password": "admin123"})
+        self.assertEqual(res.status_code, 200)
         with patch("backend.server.create_agent") as mock_create:
             mock_agent = MagicMock()
             mock_agent.send.return_value = "ok"
@@ -810,8 +923,9 @@ print('hello world')
         from fastapi.testclient import TestClient
         import backend.server
         from unittest.mock import patch, MagicMock
-
         client = TestClient(backend.server.app)
+        res = client.post("/auth/login", json={"username": "admin", "password": "admin123"})
+        self.assertEqual(res.status_code, 200)
         with patch("backend.server.create_agent") as mock_create:
             mock_agent = MagicMock()
             mock_agent.send.side_effect = Exception("API Key Expired")

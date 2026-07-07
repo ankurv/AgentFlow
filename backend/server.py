@@ -291,26 +291,27 @@ class AgentConfigIn(BaseModel):
     extra: dict = Field(default_factory=dict)
 
 
-def to_agent_config(config: dict) -> AgentConfig:
+def to_agent_config(config: dict, state: AppState = None) -> AgentConfig:
     return AgentConfig(
         id=config.get("id", ""), name=config["name"], kind=config["kind"],
         role=config.get("role", ""), model=config.get("model", ""),
         api_key=config.get("api_key", ""),
         base_url=config.get("base_url", ""), cli_command=config.get("cli_command", ""),
-        working_directory=state.workspace.path if state.workspace else "",
+        working_directory=state.workspace.path if state and state.workspace else "",
         system_prompt=config.get("system_prompt", ""),
         max_history_turns=config.get("max_history_turns", 20),
         extra=config.get("extra", {}),
     )
 
 
-def live_agent(agent_id: str):
-    if not state.orchestrator or state.status not in {"running", "paused", "needs_attention"}:
-        return None
-    return next(
-        (agent for agent in state.orchestrator.agents if agent.config.id == agent_id),
-        None,
-    )
+def live_agents_all_sessions(agent_id: str):
+    found = []
+    for s in app_states.values():
+        if s.orchestrator and s.status in {"running", "paused", "needs_attention"}:
+            for agent in s.orchestrator.agents:
+                if agent.config.id == agent_id:
+                    found.append((s, agent))
+    return found
 
 
 @app.get("/agents")
@@ -340,14 +341,13 @@ def update_agent(agent_id: str, body: AgentConfigIn, state: AppState = Depends(g
         if current["id"] == agent_id:
             updated = body.model_dump()
             updated["id"] = agent_id
-            active = live_agent(agent_id)
-            if active:
+            for s, active in live_agents_all_sessions(agent_id):
                 if updated["kind"] != current["kind"] or updated["name"] != current["name"]:
                     raise HTTPException(
                         400, "An active agent's name and kind cannot change; stop the run first"
                     )
                 try:
-                    active.reconfigure(to_agent_config(updated))
+                    active.reconfigure(to_agent_config(updated, None))
                 except Exception as exc:
                     raise HTTPException(400, f"Agent configuration is invalid: {exc}") from exc
             state.configs[index] = updated
@@ -408,14 +408,13 @@ def update_global_agent(agent_id: str, body: AgentConfigIn, session: Session = D
             updated = body.model_dump()
             updated["id"] = agent_id
             
-            active = live_agent(agent_id)
-            if active:
+            for s, active in live_agents_all_sessions(agent_id):
                 if updated["kind"] != current["kind"] or updated["name"] != current["name"]:
                     raise HTTPException(
                         400, "An active agent's name and kind cannot change; stop the run first"
                     )
                 try:
-                    active.reconfigure(to_agent_config(updated))
+                    active.reconfigure(to_agent_config(updated, None))
                 except Exception as exc:
                     raise HTTPException(400, f"Agent configuration is invalid: {exc}") from exc
                     
@@ -428,7 +427,7 @@ def update_global_agent(agent_id: str, body: AgentConfigIn, session: Session = D
 @app.post("/agents/test")
 def test_agent_config(body: AgentConfigIn, state: AppState = Depends(get_state)):
     try:
-        config = to_agent_config(body.model_dump())
+        config = to_agent_config(body.model_dump(), state)
         agent = create_agent(config)
         agent.send("ping")
         return {"ok": True}
@@ -484,12 +483,12 @@ async def start_run(body: StartBody, state: AppState = Depends(get_state)):
             expert["name"] = role
             expert["role"] = role
             expert["system_prompt"] = system_prompt
-            agents.append(create_agent(to_agent_config(expert)))
+            agents.append(create_agent(to_agent_config(expert, state)))
             
         # 2. Also include any custom agents the user explicitly defined
         for config in state.merged_configs:
             if config["name"] not in SPECIALIZED_PERSONAS:
-                agents.append(create_agent(to_agent_config(config)))
+                agents.append(create_agent(to_agent_config(config, state)))
     except Exception as exc:
         raise HTTPException(400, f"Could not initialize agent team: {exc}") from exc
 
