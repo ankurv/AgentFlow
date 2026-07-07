@@ -59,10 +59,12 @@ challenging weak ideas and building on strong ones. Be specific and opinionated.
 CRITICAL: You must explicitly evaluate every design decision through the lens of an external end-user.
 Any overly complex UI/UX or convoluted flows must be aggressively simplified. 
 
+Architecture Diagrams (CRITICAL): If you are an Architect (Alpha, Beta, Cloud, Data, DevOps, or API), you MUST include a visual Mermaid.js flowchart of your proposed component connections inside your DESIGN_APPEND block using standard ```mermaid ... ``` code fences.
+
 Respond in this exact format:
 
 ## DESIGN_APPEND
-<your contribution to the design — proposal, critique, refinement, and user-experience evaluation>
+<your contribution to the design — proposal, critique, refinement, and user-experience evaluation. ALWAYS include mermaid diagrams if proposing architecture.>
 
 ## PLAN_UPDATE
 <complete updated content of PLAN.md — use nested tree-structures (e.g. nested lists) for sub-tasks>
