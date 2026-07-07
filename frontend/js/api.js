@@ -1,3 +1,46 @@
+
+// ── Auth & 401 Interceptor ──────────────────────────────────────────────────
+const originalFetch = window.fetch;
+window.fetch = async function(...args) {
+    const response = await originalFetch(...args);
+    if (response.status === 401 || response.status === 403) {
+        document.getElementById('loginModal').style.display = 'flex';
+        const data = await response.json().catch(() => ({}));
+        if (data.detail && document.getElementById('loginError')) {
+            document.getElementById('loginError').textContent = data.detail;
+        }
+    }
+    return response;
+};
+
+async function submitLogin() {
+    const u = document.getElementById('loginUsername').value;
+    const p = document.getElementById('loginPassword').value;
+    
+    // Bypass the wrapper so we can handle 401 manually for the login route itself
+    const res = await originalFetch('/auth/login', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({username: u, password: p})
+    });
+    
+    if (res.ok) {
+        document.getElementById('loginModal').style.display = 'none';
+        document.getElementById('loginError').textContent = '';
+        document.getElementById('logoutBtn').style.display = 'inline-block';
+        // Reload page to re-fetch projects and events
+        window.location.reload();
+    } else {
+        const data = await res.json().catch(()=>({}));
+        document.getElementById('loginError').textContent = data.detail || "Login failed";
+    }
+}
+
+async function submitLogout() {
+    await fetch('/auth/logout', { method: 'POST' });
+    window.location.reload();
+}
+
 // ── SSE connection ───────────────────────────────────────────────────────────
 function connectSSE() {
   const es = new EventSource('/events');

@@ -5,10 +5,12 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
+from backend.auth import auth_manager, Session
+from pydantic import BaseModel
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Depends, Cookie, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -71,7 +73,43 @@ class AppState:
         return list(merged.values())
 
 
-state = AppState()
+# Multi-user session isolation
+app_states = {}
+
+def get_session(request: Request) -> Session:
+    session_id = request.cookies.get("session_id")
+    if not session_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    session = auth_manager.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=401, detail="Invalid session")
+    return session
+
+def get_state(session: Session = Depends(get_session)) -> AppState:
+    if session.session_id not in app_states:
+        app_states[session.session_id] = AppState()
+    return app_states[session.session_id]
+
+class LoginBody(BaseModel):
+    username: str
+    password: str
+
+@app.post("/auth/login")
+def login(body: LoginBody, response: Response):
+    session = auth_manager.login(body.username, body.password)
+    if not session:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    response.set_cookie(key="session_id", value=session.session_id, httponly=True)
+    return {"ok": True, "username": session.username, "role": session.role}
+
+@app.post("/auth/logout")
+def logout(response: Response, session: Session = Depends(get_session)):
+    auth_manager.logout(session.session_id)
+    if session.session_id in app_states:
+        del app_states[session.session_id]
+    response.delete_cookie("session_id")
+    return {"ok": True}
+
 
 GLOBAL_AGENTS_PATH = Path.home() / ".agentflow" / "global_agents.json"
 
@@ -122,7 +160,7 @@ def broadcast(event: Event):
 
 
 @app.get("/events")
-async def sse_stream(request: Request):
+async def sse_stream(request: Request, state: AppState = Depends(get_state)):
     queue: asyncio.Queue = asyncio.Queue(maxsize=200)
     state.sse_clients.append(queue)
 
@@ -168,12 +206,12 @@ def project_payload() -> dict:
 
 
 @app.get("/project")
-def get_project():
+def get_project(state: AppState = Depends(get_state)):
     return project_payload()
 
 
 @app.post("/project/open")
-def open_project(body: ProjectOpenIn):
+def open_project(body: ProjectOpenIn, state: AppState = Depends(get_state)):
     try:
         state.open_project(body.path)
     except (OSError, ValueError) as exc:
@@ -182,7 +220,7 @@ def open_project(body: ProjectOpenIn):
 
 
 @app.put("/project/brief")
-def save_project_brief(body: ProjectBriefIn):
+def save_project_brief(body: ProjectBriefIn, state: AppState = Depends(get_state)):
     if not state.workspace:
         raise HTTPException(400, "Open a project first")
     state.workspace.write_brief(body.content)
@@ -225,7 +263,7 @@ def live_agent(agent_id: str):
 
 
 @app.get("/agents")
-def list_agents():
+def list_agents(state: AppState = Depends(get_state)):
     return {
         "global": load_global_agents(),
         "project": state.configs,
@@ -235,7 +273,7 @@ def list_agents():
 
 
 @app.post("/agents")
-def add_agent(body: AgentConfigIn):
+def add_agent(body: AgentConfigIn, state: AppState = Depends(get_state)):
     if state.status in {"running", "paused", "needs_attention"}:
         raise HTTPException(400, "Stop the active run before adding an agent")
     config = body.model_dump()
@@ -246,7 +284,7 @@ def add_agent(body: AgentConfigIn):
 
 
 @app.put("/agents/{agent_id}")
-def update_agent(agent_id: str, body: AgentConfigIn):
+def update_agent(agent_id: str, body: AgentConfigIn, state: AppState = Depends(get_state)):
     for index, current in enumerate(state.configs):
         if current["id"] == agent_id:
             updated = body.model_dump()
@@ -268,7 +306,7 @@ def update_agent(agent_id: str, body: AgentConfigIn):
 
 
 @app.delete("/agents/{agent_id}")
-def delete_agent(agent_id: str):
+def delete_agent(agent_id: str, state: AppState = Depends(get_state)):
     if state.status in {"running", "paused", "needs_attention"}:
         raise HTTPException(400, "Stop the active run before removing an agent")
     state.configs = [config for config in state.configs if config["id"] != agent_id]
@@ -277,12 +315,16 @@ def delete_agent(agent_id: str):
 
 
 @app.get("/agents/global")
-def list_global_agents():
+def list_global_agents(state: AppState = Depends(get_state)):
     return {"agents": load_global_agents()}
 
 
 @app.post("/agents/global")
-def add_global_agent(body: AgentConfigIn):
+def add_global_agent(body: AgentConfigIn, session: Session = Depends(get_session)):
+
+    if session.role != "admin":
+        raise HTTPException(403, "Only admins can modify global agents")
+
     configs = load_global_agents()
     config = body.model_dump()
     config["id"] = str(uuid.uuid4())[:8]
@@ -292,7 +334,11 @@ def add_global_agent(body: AgentConfigIn):
 
 
 @app.delete("/agents/global/{agent_id}")
-def delete_global_agent(agent_id: str):
+def delete_global_agent(agent_id: str, session: Session = Depends(get_session)):
+
+    if session.role != "admin":
+        raise HTTPException(403, "Only admins can modify global agents")
+
     configs = load_global_agents()
     configs = [c for c in configs if c["id"] != agent_id]
     save_global_agents(configs)
@@ -300,7 +346,11 @@ def delete_global_agent(agent_id: str):
 
 
 @app.put("/agents/global/{agent_id}")
-def update_global_agent(agent_id: str, body: AgentConfigIn):
+def update_global_agent(agent_id: str, body: AgentConfigIn, session: Session = Depends(get_session)):
+
+    if session.role != "admin":
+        raise HTTPException(403, "Only admins can modify global agents")
+
     configs = load_global_agents()
     for index, current in enumerate(configs):
         if current["id"] == agent_id:
@@ -325,7 +375,7 @@ def update_global_agent(agent_id: str, body: AgentConfigIn):
 
 
 @app.post("/agents/test")
-def test_agent_config(body: AgentConfigIn):
+def test_agent_config(body: AgentConfigIn, state: AppState = Depends(get_state)):
     try:
         config = to_agent_config(body.model_dump())
         agent = create_agent(config)
@@ -346,7 +396,7 @@ class StartBody(BaseModel):
 
 
 @app.post("/run/start")
-async def start_run(body: StartBody):
+async def start_run(body: StartBody, state: AppState = Depends(get_state)):
     if state.status in {"running", "paused", "needs_attention"}:
         raise HTTPException(400, "A run is already in progress")
     if body.project_path:
@@ -438,7 +488,7 @@ async def start_run(body: StartBody):
 
 
 @app.post("/run/reset")
-def reset_run():
+def reset_run(state: AppState = Depends(get_state)):
     if state.status == "running":
         raise HTTPException(400, "Cannot reset while running. Stop first.")
     if state.workspace:
@@ -453,7 +503,7 @@ def reset_run():
 
 
 @app.post("/run/pause")
-def pause_run():
+def pause_run(state: AppState = Depends(get_state)):
     if state.status == "needs_attention":
         raise HTTPException(409, "Fix the failed agent and retry its turn")
     if state.orchestrator:
@@ -463,7 +513,7 @@ def pause_run():
 
 
 @app.post("/run/resume")
-def resume_run():
+def resume_run(state: AppState = Depends(get_state)):
     if state.orchestrator and state.orchestrator.failed_turn:
         raise HTTPException(409, "Use Retry failed turn after fixing the agent")
     if state.orchestrator:
@@ -473,7 +523,7 @@ def resume_run():
 
 
 @app.post("/run/retry")
-def retry_failed_turn():
+def retry_failed_turn(state: AppState = Depends(get_state)):
     if not state.orchestrator or not state.orchestrator.failed_turn:
         raise HTTPException(400, "There is no failed turn to retry")
     state.orchestrator.retry_failed_turn()
@@ -483,7 +533,7 @@ def retry_failed_turn():
 
 
 @app.post("/run/stop")
-def stop_run():
+def stop_run(state: AppState = Depends(get_state)):
     if state.orchestrator:
         state.orchestrator.stop()
         state.orchestrator.resume()
@@ -501,7 +551,7 @@ class SteerBody(BaseModel):
 
 
 @app.post("/run/steer")
-async def steer_run(body: SteerBody):
+async def steer_run(body: SteerBody, state: AppState = Depends(get_state)):
     if not state.orchestrator:
         raise HTTPException(400, "No active run")
     await state.orchestrator.steer(body.message)
@@ -509,7 +559,7 @@ async def steer_run(body: SteerBody):
 
 
 @app.get("/run/status")
-def run_status():
+def run_status(state: AppState = Depends(get_state)):
     agents = [agent.state_dict() for agent in state.orchestrator.agents] if state.orchestrator else []
     return {
         "status": state.status,
@@ -522,24 +572,24 @@ def run_status():
 
 
 @app.get("/runs")
-def recent_runs():
+def recent_runs(state: AppState = Depends(get_state)):
     return {"runs": state.store.recent_runs() if state.store else []}
 
 
 @app.get("/runs/{run_id}/turns")
-def run_turns(run_id: str):
+def run_turns(run_id: str, state: AppState = Depends(get_state)):
     return {"turns": state.store.run_turns(run_id) if state.store else []}
 
 
 @app.get("/workspace")
-def get_workspace():
+def get_workspace(state: AppState = Depends(get_state)):
     if not state.workspace:
         return {"project_path": "", "src": {}, "src_files": []}
     return state.workspace.snapshot()
 
 
 @app.get("/workspace/file/{key}")
-def get_file(key: str):
+def get_file(key: str, state: AppState = Depends(get_state)):
     if not state.workspace:
         raise HTTPException(404, "No active workspace")
     allowed = ["design", "plan", "consensus", "tests", "questions"]
@@ -552,7 +602,7 @@ class FileUpdateBody(BaseModel):
     content: str
 
 @app.post("/workspace/file/{key}")
-def update_file(key: str, body: FileUpdateBody):
+def update_file(key: str, body: FileUpdateBody, state: AppState = Depends(get_state)):
     if not state.workspace:
         raise HTTPException(404, "No active workspace")
     allowed = ["design", "plan", "consensus", "tests", "questions"]
@@ -563,7 +613,7 @@ def update_file(key: str, body: FileUpdateBody):
 
 
 @app.get("/workspace/src/{filename:path}")
-def get_src_file(filename: str):
+def get_src_file(filename: str, state: AppState = Depends(get_state)):
     if not state.workspace:
         raise HTTPException(404, "No active workspace")
     src = state.workspace.read_src()
@@ -573,7 +623,7 @@ def get_src_file(filename: str):
 
 
 @app.post("/workspace/src/{filename:path}")
-def update_src_file(filename: str, body: FileUpdateBody):
+def update_src_file(filename: str, body: FileUpdateBody, state: AppState = Depends(get_state)):
     if not state.workspace:
         raise HTTPException(404, "No active workspace")
     try:
@@ -584,7 +634,7 @@ def update_src_file(filename: str, body: FileUpdateBody):
 
 
 @app.get("/events/history")
-def event_history():
+def event_history(state: AppState = Depends(get_state)):
     return {"events": state.event_log}
 
 

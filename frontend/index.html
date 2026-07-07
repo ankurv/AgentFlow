@@ -25,6 +25,7 @@
     <span id="statusText">idle</span>
   </div>
   <div class="spacer"></div>
+  <button class="header-btn" onclick="submitLogout()" id="logoutBtn" style="margin-right:15px; display:none;">Logout</button>
   <button class="header-btn" onclick="retryFailedTurn()" id="retryBtn" style="display:none">Retry failed turn</button>
 </header>
 
@@ -191,5 +192,22 @@
   <script src="/js/workspace.js"></script>
   <script src="/js/agents.js"></script>
   <script src="/js/main.js"></script>
+
+<!-- Login Modal -->
+<div id="loginModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:9999; align-items:center; justify-content:center; backdrop-filter: blur(5px);">
+  <div style="background:var(--surface); padding:40px; border-radius:12px; border:1px solid var(--border); width:400px; display:flex; flex-direction:column; gap:20px;">
+    <h2 style="margin:0; text-align:center; color:var(--text);">Login to AgentFlow</h2>
+    <div>
+      <label style="color:var(--muted); font-size:12px; margin-bottom:5px; display:block;">Username</label>
+      <input type="text" id="loginUsername" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--border); background:var(--bg); color:var(--text); box-sizing:border-box;">
+    </div>
+    <div>
+      <label style="color:var(--muted); font-size:12px; margin-bottom:5px; display:block;">Password</label>
+      <input type="password" id="loginPassword" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--border); background:var(--bg); color:var(--text); box-sizing:border-box;" onkeydown="if(event.key==='Enter') submitLogin()">
+    </div>
+    <div id="loginError" style="color:#ff6b6b; font-size:12px; text-align:center; min-height:15px;"></div>
+    <button class="btn btn-primary" onclick="submitLogin()" style="width:100%; padding:12px; font-size:16px;">Login</button>
+  </div>
+</div>
 </body>
 </html>
