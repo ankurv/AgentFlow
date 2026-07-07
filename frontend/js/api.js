@@ -5,10 +5,7 @@ window.fetch = async function(...args) {
     const response = await originalFetch(...args);
     if (response.status === 401 || response.status === 403) {
         document.getElementById('loginModal').style.display = 'flex';
-        const data = await response.json().catch(() => ({}));
-        if (data.detail && document.getElementById('loginError')) {
-            document.getElementById('loginError').textContent = data.detail;
-        }
+        // We do not set loginError here because a 401 on initial load is expected and isn't an "error" the user made.
     }
     return response;
 };
