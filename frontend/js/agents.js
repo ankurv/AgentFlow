@@ -41,7 +41,14 @@ function renderAgentCards() {
   if (projectOpen) {
     html += `<h3 style="margin-top:10px;margin-bottom:12px;font-size:12.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;border-bottom:1px solid var(--border);padding-bottom:6px">Project Team</h3>`;
     if (!projectAgentConfigs.length) {
-      html += `<div style="color:var(--muted);font-size:12.5px;font-style:italic;margin-bottom:20px;padding:8px 0">No project agents configured. (Backend defaults will apply)</div>`;
+      html += `<div style="color:var(--muted);font-size:12.5px;font-style:italic;margin-bottom:10px;padding:8px 0">No project agents configured. Inheriting global team:</div>`;
+      if (!globalAgentConfigs.length) {
+        html += `<div style="color:var(--muted);font-size:12.5px;font-style:italic;margin-bottom:20px;padding:8px 0">No global agents configured either.</div>`;
+      } else {
+        globalAgentConfigs.forEach((cfg, idx) => {
+          html += renderSingleCard(cfg, idx, true); // true to render them as global/read-only or editable if we want
+        });
+      }
     } else {
       projectAgentConfigs.forEach((cfg, idx) => {
         html += renderSingleCard(cfg, idx, false);

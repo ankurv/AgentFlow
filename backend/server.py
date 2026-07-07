@@ -66,11 +66,10 @@ class AppState:
 
     @property
     def merged_configs(self) -> list[dict]:
-        # Merge global and project configs by name (case-insensitive key). Local overrides global.
-        merged = {cfg["name"].strip().lower(): cfg for cfg in load_global_agents()}
-        for cfg in self.configs:
-            merged[cfg["name"].strip().lower()] = cfg
-        return list(merged.values())
+        # If project has its own agents, use ONLY those. Otherwise, fallback to global.
+        if self.configs:
+            return list(self.configs)
+        return load_global_agents()
 
 
 # Multi-user session isolation
