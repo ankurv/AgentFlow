@@ -193,7 +193,7 @@ def broadcast(event: Event, state):
         state.status = "needs_attention"
     elif event.kind == EventKind.TURN_START and event.data.get("resumed"):
         state.status = "running"
-    elif event.kind == EventKind.PHASE and event.data.get("status") in {"waiting_for_approval", "waiting_for_continuation"}:
+    elif event.kind == EventKind.PHASE and event.data.get("status") in {"waiting_for_approval", "waiting_for_continuation", "budget_exhausted"}:
         state.status = "paused"
     elif event.kind == EventKind.PHASE and event.data.get("status") == "continuing_debate":
         state.status = "running"

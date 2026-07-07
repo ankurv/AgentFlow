@@ -61,7 +61,7 @@ function handleEvent(ev) {
 
   // Update status
   if (ev.kind === 'phase') {
-    if (ev.data.status === 'waiting_for_continuation' || ev.data.status === 'waiting_for_approval') {
+    if (ev.data.status === 'waiting_for_continuation' || ev.data.status === 'waiting_for_approval' || ev.data.status === 'budget_exhausted') {
       updateStatus('paused');
     } else {
       updateStatus('running');
