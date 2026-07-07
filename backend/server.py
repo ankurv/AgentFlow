@@ -369,8 +369,22 @@ async def start_run(body: StartBody):
 
     agents = []
     try:
+        from .orchestrator import SPECIALIZED_PERSONAS
+        base_config = state.merged_configs[0]
+        
+        # 1. Spawn the Virtual Company from the Base Provider
+        for role, system_prompt in SPECIALIZED_PERSONAS.items():
+            expert = base_config.copy()
+            expert["id"] = f"{base_config.get('id', 'base')}_{role}"
+            expert["name"] = role
+            expert["role"] = role
+            expert["system_prompt"] = system_prompt
+            agents.append(create_agent(to_agent_config(expert)))
+            
+        # 2. Also include any custom agents the user explicitly defined
         for config in state.merged_configs:
-            agents.append(create_agent(to_agent_config(config)))
+            if config["name"] not in SPECIALIZED_PERSONAS:
+                agents.append(create_agent(to_agent_config(config)))
     except Exception as exc:
         raise HTTPException(400, f"Could not initialize agent team: {exc}") from exc
 
