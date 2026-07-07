@@ -672,7 +672,6 @@ window.addEventListener('load', checkAuth);
 
 
 async function deleteUser(username) {
-    if (!confirm(`Are you sure you want to delete the user '${username}'?`)) return;
     const res = await fetch(`/users/${username}`, { method: 'DELETE' });
     if (res.ok) {
         loadUsers();
