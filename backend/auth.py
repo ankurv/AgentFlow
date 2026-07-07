@@ -72,4 +72,28 @@ class AuthManager:
         if session_id in self.sessions:
             del self.sessions[session_id]
 
+
+    def add_user(self, username: str, password: str, role: str) -> bool:
+        users = self._load_users()
+        if username in users:
+            return False
+        users[username] = {
+            "password_hash": self.hash_password(password),
+            "role": role
+        }
+        USERS_PATH.write_text(json.dumps(users, indent=2))
+        return True
+
+    def change_password(self, username: str, new_password: str) -> bool:
+        users = self._load_users()
+        if username not in users:
+            return False
+        users[username]["password_hash"] = self.hash_password(new_password)
+        USERS_PATH.write_text(json.dumps(users, indent=2))
+        return True
+        
+    def list_users(self) -> list:
+        users = self._load_users()
+        return [{"username": u, "role": d["role"]} for u, d in users.items()]
+
 auth_manager = AuthManager()

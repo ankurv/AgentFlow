@@ -570,3 +570,92 @@ async function exportContext() {
     alert('Failed to export context: ' + e.message);
   }
 }
+
+// ── Settings & User Management ──────────────────────────────────────────────
+let currentUser = null;
+
+async function checkAuth() {
+    const res = await originalFetch('/users/me');
+    if (res.ok) {
+        currentUser = await res.json();
+        if (currentUser.role === 'admin') {
+            document.getElementById('adminSettingsBlock').style.display = 'block';
+            loadUsers();
+        }
+    }
+}
+
+async function loadUsers() {
+    const res = await fetch('/users');
+    if (res.ok) {
+        const data = await res.json();
+        const tbody = document.getElementById('usersTableBody');
+        tbody.innerHTML = '';
+        data.users.forEach(u => {
+            tbody.innerHTML += `
+              <tr style="border-bottom:1px solid var(--border);">
+                <td style="padding:10px;">${u.username}</td>
+                <td style="padding:10px;">${u.role}</td>
+                <td style="padding:10px;">
+                  <button class="btn btn-secondary" onclick="resetUserPassword('${u.username}')">Force Reset Password</button>
+                </td>
+              </tr>
+            `;
+        });
+    }
+}
+
+async function changeMyPassword() {
+    const np = document.getElementById('newPassword').value;
+    if (!np) return alert("Enter a new password");
+    
+    const res = await fetch('/users/password', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({username: currentUser.username, new_password: np})
+    });
+    if (res.ok) {
+        alert("Password updated!");
+        document.getElementById('newPassword').value = '';
+    } else {
+        alert("Failed to update password");
+    }
+}
+
+async function resetUserPassword(username) {
+    const np = prompt(`Enter new password for ${username}:`);
+    if (!np) return;
+    const res = await fetch('/users/password', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({username: username, new_password: np})
+    });
+    if (res.ok) alert(`Password for ${username} updated!`);
+    else alert("Failed to reset password");
+}
+
+async function addUser() {
+    const u = document.getElementById('newUsername').value;
+    const p = document.getElementById('newUserPassword').value;
+    const r = document.getElementById('newUserRole').value;
+    
+    if (!u || !p) return alert("Fill in all fields");
+    
+    const res = await fetch('/users', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({username: u, password: p, role: r})
+    });
+    
+    if (res.ok) {
+        document.getElementById('newUsername').value = '';
+        document.getElementById('newUserPassword').value = '';
+        loadUsers();
+    } else {
+        alert("Failed to add user (maybe username already exists?)");
+    }
+}
+
+// Check auth on boot
+window.addEventListener('load', checkAuth);
+

@@ -102,6 +102,45 @@ def login(body: LoginBody, response: Response):
     response.set_cookie(key="session_id", value=session.session_id, httponly=True)
     return {"ok": True, "username": session.username, "role": session.role}
 
+
+# User Management Endpoints
+@app.get("/users")
+def get_users(session: Session = Depends(get_session)):
+    if session.role != "admin":
+        raise HTTPException(403, "Admins only")
+    return {"users": auth_manager.list_users()}
+
+class AddUserBody(BaseModel):
+    username: str
+    password: str
+    role: str = "user"
+
+@app.post("/users")
+def add_user(body: AddUserBody, session: Session = Depends(get_session)):
+    if session.role != "admin":
+        raise HTTPException(403, "Admins only")
+    success = auth_manager.add_user(body.username, body.password, body.role)
+    if not success:
+        raise HTTPException(400, "User already exists")
+    return {"ok": True}
+
+class ChangePasswordBody(BaseModel):
+    username: str
+    new_password: str
+
+@app.put("/users/password")
+def change_password(body: ChangePasswordBody, session: Session = Depends(get_session)):
+    if session.role != "admin" and session.username != body.username:
+        raise HTTPException(403, "Not authorized to change this user's password")
+    success = auth_manager.change_password(body.username, body.new_password)
+    if not success:
+        raise HTTPException(404, "User not found")
+    return {"ok": True}
+    
+@app.get("/users/me")
+def get_me(session: Session = Depends(get_session)):
+    return {"username": session.username, "role": session.role}
+
 @app.post("/auth/logout")
 def logout(response: Response, session: Session = Depends(get_session)):
     auth_manager.logout(session.session_id)

@@ -47,11 +47,50 @@
 <nav>
   <div class="tab active" onclick="showTab('chat',this)">Live Feed</div>
   <div class="tab" onclick="showTab('workspace',this)">Project Files</div>
-  <div class="tab" onclick="showTab('config',this)">Agents</div>
+    <div class="tab" onclick="showTab('config',this)">Agents</div>
+  <div class="tab" onclick="showTab('settings',this)">Settings</div>
   <div class="tab" onclick="showTab('history',this)">Run History</div>
 </nav>
 
 <div class="main">
+
+  
+  <!-- ── Settings ── -->
+  <div class="panel" id="panel-settings">
+    <h2 style="color:var(--text);margin-top:0;">User Management</h2>
+    <div style="background:var(--surface); padding:20px; border-radius:8px; border:1px solid var(--border); margin-bottom:20px;">
+      <h3 style="margin-top:0;">Change My Password</h3>
+      <div style="display:flex; gap:10px; margin-top:10px;">
+        <input type="password" id="newPassword" placeholder="New Password" style="flex:1; padding:8px; border-radius:4px; border:1px solid var(--border); background:var(--bg); color:var(--text);">
+        <button class="btn btn-primary" onclick="changeMyPassword()">Update Password</button>
+      </div>
+    </div>
+    
+    <div id="adminSettingsBlock" style="display:none; background:var(--surface); padding:20px; border-radius:8px; border:1px solid var(--border);">
+      <h3 style="margin-top:0;">Team Members (Admin)</h3>
+      <table id="usersTable" style="width:100%; border-collapse:collapse; margin-bottom:20px; text-align:left;">
+        <thead>
+          <tr style="border-bottom:1px solid var(--border);">
+            <th style="padding:10px;">Username</th>
+            <th style="padding:10px;">Role</th>
+            <th style="padding:10px;">Action</th>
+          </tr>
+        </thead>
+        <tbody id="usersTableBody"></tbody>
+      </table>
+      
+      <h4>Add New User</h4>
+      <div style="display:flex; gap:10px; margin-top:10px;">
+        <input type="text" id="newUsername" placeholder="Username" style="flex:1; padding:8px; border-radius:4px; border:1px solid var(--border); background:var(--bg); color:var(--text);">
+        <input type="password" id="newUserPassword" placeholder="Password" style="flex:1; padding:8px; border-radius:4px; border:1px solid var(--border); background:var(--bg); color:var(--text);">
+        <select id="newUserRole" style="padding:8px; border-radius:4px; border:1px solid var(--border); background:var(--bg); color:var(--text);">
+          <option value="user">User</option>
+          <option value="admin">Admin</option>
+        </select>
+        <button class="btn btn-primary" onclick="addUser()">Create User</button>
+      </div>
+    </div>
+  </div>
 
   <!-- ── Live Feed ── -->
   <div class="panel active" id="panel-chat">
