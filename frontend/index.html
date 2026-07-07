@@ -602,6 +602,7 @@
           <div style="display:flex; gap:10px; width:100%">
             <input id="steerInput" placeholder="Type a prompt/task here and press Enter to start the run…" onkeydown="if(event.key==='Enter')steer()" style="flex:1">
             <button class="btn btn-secondary" id="sendBtn" onclick="steer()">Send</button>
+            <button class="btn btn-secondary" id="resetBtn" onclick="resetRun()" style="display:none">Reset</button>
             <button class="btn btn-secondary" id="pauseBtn" onclick="pauseResume()" style="display:none">Pause</button>
             <button class="btn btn-danger" id="stopBtn" onclick="stopRun()" style="display:none">Stop</button>
           </div>
@@ -973,12 +974,15 @@ function appendFeed(ev) {
       summary = `Phase: ${ev.data.phase?.toUpperCase() || ''} ${ev.data.status ? '— ' + ev.data.status : ''} ${ev.data.iteration ? 'iter ' + ev.data.iteration : ''} ${ev.data.round ? 'round ' + ev.data.round : ''}`;
       if (ev.data.roles) summary += ' | ' + Object.entries(ev.data.roles).map(([r,a])=>`${a}=${r}`).join(' ');
       break;
-    case 'turn_start':
-      summary = `${ev.data.resumed ? 'Resuming' : 'Speaking'} · ${ev.data.turn_id || 'turn'} · attempt ${ev.data.attempt || 1} (${ev.data.role || ev.data.phase || ''} ${ev.data.round ? 'round '+ev.data.round : ''} ${ev.data.iteration ? 'iter '+ev.data.iteration : ''})`;
+    case 'turn_start': {
+      const verb = getAgentVerb(ev.agent);
+      summary = `${verb}... (${ev.data.turn_id || 'turn'} · attempt ${ev.data.attempt || 1})`;
       break;
+    }
     case 'turn_end': {
       const u = ev.data.usage || {};
-      summary = `${ev.data.turn_id || 'Turn'} completed · attempt ${ev.data.attempt || 1} (${(u.input_tokens||0).toLocaleString()} in · ${(u.cached_input_tokens||0).toLocaleString()} cached · ${(u.output_tokens||0).toLocaleString()} out)`;
+      const verb = getAgentVerb(ev.agent);
+      summary = `${verb} completed (${ev.data.turn_id || 'turn'} · attempt ${ev.data.attempt || 1}) · ${(u.input_tokens||0).toLocaleString()} in, ${(u.output_tokens||0).toLocaleString()} out`;
       detail = ev.data.response || '';
       const totalTok = (u.input_tokens || 0) + (u.output_tokens || 0);
       const turnCost = ev.data.pricing_known ? formatCost(ev.data.cost_usd || 0) : 'unpriced';
@@ -1036,7 +1040,8 @@ function appendFeed(ev) {
           <span class="feed-ts">${ts}</span>
         </div>
         <div class="feed-text">${escHtml(summary)}</div>
-        ${detail ? `<div class="feed-detail" onclick="this.classList.toggle('expanded')">${escHtml(detail)}</div>` : ''}
+        ${detail ? `<div class="feed-detail ${ev.data.verdict === 'PAUSE_FOR_INPUT' ? 'expanded' : ''}" style="display: ${ev.data.verdict === 'PAUSE_FOR_INPUT' ? 'block' : 'none'}; cursor: pointer;" onclick="this.style.display = this.style.display === 'none' ? 'block' : 'none'">${escHtml(detail)}</div>` : ''}
+        ${detail && ev.data.verdict !== 'PAUSE_FOR_INPUT' ? `<button class="btn btn-secondary" style="font-size: 10px; padding: 2px 6px; margin-top: 4px;" onclick="const d = this.previousElementSibling; if (d.style.display === 'none') { d.style.display = 'block'; this.innerText = 'Hide Details'; } else { d.style.display = 'none'; this.innerText = 'Show Details'; }">Show Details</button>` : ''}
       </div>
     </div>
   `;
@@ -1047,6 +1052,17 @@ function appendFeed(ev) {
 
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function getAgentVerb(agent) {
+  const map = {
+    'architect': 'Designing',
+    'developer': 'Coding',
+    'reviewer': 'Reviewing',
+    'tester': 'Testing',
+    'coordinator': 'Coordinating'
+  };
+  return map[(agent||'').toLowerCase()] || 'Thinking';
 }
 
 function escAttr(s) {
@@ -1150,6 +1166,19 @@ async function retryFailedTurn() {
   notify('Retrying the same failed turn');
 }
 
+async function resetRun() {
+  if (runStatus === 'running') return;
+  if (!confirm("Are you sure you want to reset? This will clear the conversational history (but keep your project files intact).")) return;
+  try {
+    await fetch('/run/reset', { method: 'POST' });
+    document.getElementById('feed').innerHTML = '';
+    notify('Run state reset.');
+  } catch (err) {
+    console.error(err);
+    alert('Failed to reset run.');
+  }
+}
+
 async function stopRun() {
   await fetch('/run/stop', {method:'POST'});
   paused = false;
@@ -1226,6 +1255,10 @@ function updateStatus(s) {
   }
   if (stopBtn) {
     stopBtn.style.display = running ? '' : 'none';
+  }
+  const resetBtn = document.getElementById('resetBtn');
+  if (resetBtn) {
+    resetBtn.style.display = (s === 'idle' || s === 'done' || s === 'error') ? '' : 'none';
   }
 }
 
@@ -1749,7 +1782,7 @@ function renderSingleCard(cfg, idx, isGlobal) {
             <div class="form-grid" style="margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border)">
               <div class="form-group full">
                 <label>API Key</label>
-                <input type="password" value="${escAttr(data.api_key||'')}" placeholder="fallback to env var" oninput="editingAgentData.api_key=this.value">
+                <input type="password" value="${escAttr(data.api_key||'')}" placeholder="fallback to env var" oninput="editingAgentData.api_key=this.value" autocomplete="new-password" data-lpignore="true">
               </div>
               <div class="form-group full">
                 <label>CLI command (for local models)</label>

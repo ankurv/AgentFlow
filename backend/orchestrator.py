@@ -11,9 +11,10 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
+import json
 from typing import Any, Callable, Optional
 
-from .agents.base import AgentBase
+from .agents.base import AgentBase, Message, Usage
 from .workspace.workspace import Workspace
 
 
@@ -195,6 +196,7 @@ class Orchestrator:
         max_build_iterations: int = 5,
         require_approval: bool = True,
         mode: str = "all",
+        restore: bool = False,
     ):
         self.agents = agents
         self.ws = workspace
@@ -203,6 +205,7 @@ class Orchestrator:
         self.max_build_iterations = max_build_iterations
         self.require_approval = require_approval
         self.mode = mode
+        self.restore = restore
 
         # Steering controls
         self._paused = False
@@ -214,6 +217,9 @@ class Orchestrator:
         self._turn_attempts: dict[str, int] = {}
         self._failed_turn: dict[str, Any] | None = None
         self._recovery_event = asyncio.Event()
+
+        if self.restore:
+            self.load_state()
 
     # ── Public controls ───────────────────────────────────────────────────────
 
@@ -578,12 +584,57 @@ class Orchestrator:
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
+    def save_state(self):
+        state = {
+            "mode": self.mode,
+            "turn_sequence": self._turn_sequence,
+            "agents": {
+                a.name: [
+                    {
+                        "role": m.role,
+                        "content": m.content,
+                        "timestamp": m.timestamp,
+                        "usage": m.usage.to_dict(),
+                    } for m in a.history
+                ] for a in self.agents
+            }
+        }
+        try:
+            (self.ws.root / "run_state.json").write_text(json.dumps(state, indent=2))
+        except Exception:
+            pass
+
+    def load_state(self):
+        state_file = self.ws.root / "run_state.json"
+        if not state_file.exists():
+            return False
+        try:
+            state = json.loads(state_file.read_text())
+            self.mode = state.get("mode", self.mode)
+            self._turn_sequence = state.get("turn_sequence", 0)
+            
+            agent_states = state.get("agents", {})
+            for a in self.agents:
+                if a.name in agent_states:
+                    a.history = []
+                    for m in agent_states[a.name]:
+                        usage = Usage(**m.get("usage", {}))
+                        msg = Message(role=m.get("role", ""), content=m.get("content", ""), timestamp=m.get("timestamp", ""), usage=usage)
+                        a.history.append(msg)
+            return True
+        except Exception as e:
+            print(f"Failed to load state: {e}")
+            return False
+
     def _emit(self, event: Event):
         if self._cb:
             try:
                 self._cb(event)
             except Exception:
                 pass
+        
+        if event.kind in {EventKind.TURN_END, EventKind.STEER, EventKind.FILE_WRITE}:
+            self.save_state()
 
     def _begin_turn(self, agent: AgentBase, context: dict) -> str:
         self._turn_sequence += 1

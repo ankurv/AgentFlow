@@ -389,6 +389,7 @@ async def start_run(body: StartBody):
         max_build_iterations=body.max_build_iterations,
         require_approval=True,
         mode=body.mode,
+        restore=True,
     )
 
     async def run_and_update():
@@ -415,6 +416,21 @@ async def start_run(body: StartBody):
 
     asyncio.create_task(run_and_update())
     return {"ok": True, "run_id": state.run_id, "idea_source": "prompt" if body.idea.strip() else "AGENTFLOW.md"}
+
+
+@app.post("/run/reset")
+def reset_run():
+    if state.status == "running":
+        raise HTTPException(400, "Cannot reset while running. Stop first.")
+    if state.workspace:
+        try:
+            (state.workspace.root / "run_state.json").unlink(missing_ok=True)
+        except OSError:
+            pass
+    state.status = "idle"
+    state.orchestrator = None
+    state.event_log.clear()
+    return {"ok": True}
 
 
 @app.post("/run/pause")
