@@ -25,21 +25,23 @@ function renderAgentCards() {
 
   let html = '';
 
-  // Render Global List
-  html += `<h3 style="margin-top:10px;margin-bottom:12px;font-size:12.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;border-bottom:1px solid var(--border);padding-bottom:6px">Global Team Templates</h3>`;
-  if (!globalAgentConfigs.length) {
-    html += `<div style="color:var(--muted);font-size:12.5px;font-style:italic;margin-bottom:20px;padding:8px 0">No global agents configured.</div>`;
-  } else {
-    globalAgentConfigs.forEach((cfg, idx) => {
-      html += renderSingleCard(cfg, idx, true);
-    });
+  // Render Global List (Only if no project is open)
+  if (!projectOpen) {
+    html += `<h3 style="margin-top:10px;margin-bottom:12px;font-size:12.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;border-bottom:1px solid var(--border);padding-bottom:6px">Global Team Templates</h3>`;
+    if (!globalAgentConfigs.length) {
+      html += `<div style="color:var(--muted);font-size:12.5px;font-style:italic;margin-bottom:20px;padding:8px 0">No global agents configured.</div>`;
+    } else {
+      globalAgentConfigs.forEach((cfg, idx) => {
+        html += renderSingleCard(cfg, idx, true);
+      });
+    }
   }
 
-  // Render Project List
+  // Render Project List (Only if project is open)
   if (projectOpen) {
-    html += `<h3 style="margin-top:24px;margin-bottom:12px;font-size:12.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;border-bottom:1px solid var(--border);padding-bottom:6px">Project-Specific Team & Overrides</h3>`;
+    html += `<h3 style="margin-top:10px;margin-bottom:12px;font-size:12.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;border-bottom:1px solid var(--border);padding-bottom:6px">Project Team</h3>`;
     if (!projectAgentConfigs.length) {
-      html += `<div style="color:var(--muted);font-size:12.5px;font-style:italic;margin-bottom:20px;padding:8px 0">No project-specific overrides. Using global team templates.</div>`;
+      html += `<div style="color:var(--muted);font-size:12.5px;font-style:italic;margin-bottom:20px;padding:8px 0">No project agents configured. (Backend defaults will apply)</div>`;
     } else {
       projectAgentConfigs.forEach((cfg, idx) => {
         html += renderSingleCard(cfg, idx, false);
