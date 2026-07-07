@@ -196,7 +196,17 @@ async function startRun(prompt) {
   mergedAgents.forEach(a => {
     if (!agentColors[a.name]) agentColors[a.name] = COLORS[colorIdx++ % COLORS.length];
   });
-  let mode = "debate"; // Hardcoded to debate since AgentFlow is an Architecture Studio
+  // Default to debate, but allow the user to override via prompt if they explicitly ask to build
+  let mode = "debate";
+  const ideaLower = idea.toLowerCase();
+  
+  if (ideaLower.includes("build only") || ideaLower.includes("implement only")) {
+    mode = "build";
+  } else if (ideaLower.includes("build") && ideaLower.includes("debate")) {
+    mode = "all";
+  } else if (ideaLower.includes("build") && !ideaLower.includes("debate")) {
+    mode = "build";
+  }
   totalTokens = 0;
   totalCost = 0;
   eventCount = 0;
