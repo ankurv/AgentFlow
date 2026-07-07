@@ -59,12 +59,12 @@ challenging weak ideas and building on strong ones. Be specific and opinionated.
 CRITICAL: You must explicitly evaluate every design decision through the lens of an external end-user.
 Any overly complex UI/UX or convoluted flows must be aggressively simplified. 
 
-Architecture Diagrams (CRITICAL): If you are an Architect (Alpha, Beta, Cloud, Data, DevOps, or API), you MUST include a visual Mermaid.js flowchart of your proposed component connections inside your DESIGN_APPEND block using standard ```mermaid ... ``` code fences.
+Architecture Diagrams (CRITICAL): If you are an Architect (Alpha, Beta, Cloud, Data, DevOps, or API), you MUST include a visual Mermaid.js flowchart of your proposed component connections inside your DESIGN_UPDATE block using standard ```mermaid ... ``` code fences.
 
 Respond in this exact format:
 
-## DESIGN_APPEND
-<your contribution to the design — proposal, critique, refinement, and user-experience evaluation. ALWAYS include mermaid diagrams if proposing architecture.>
+## DESIGN_UPDATE
+<your complete, updated architecture design — proposal, critique, refinement, and user-experience evaluation. ALWAYS include mermaid diagrams if proposing architecture. This will OVERWRITE the previous design, so ensure it is comprehensive.>
 
 ## PLAN_UPDATE
 <complete updated content of PLAN.md — use nested tree-structures (e.g. nested lists) for sub-tasks>
@@ -955,9 +955,10 @@ class Orchestrator:
             self.ws.write("plan", f"# Plan\n\n{plan_update}")
             self._emit(Event(EventKind.FILE_WRITE, agent=agent_name, data={"file": "PLAN.md"}))
 
-        design_bit = self.ws.parse_section(response, "DESIGN_APPEND")
-        if design_bit:
-            self.ws.append("design", design_bit, agent_name, "Coordinator-led Turn")
+        design_update = self.ws.parse_section(response, "DESIGN_UPDATE")
+        if design_update:
+            self.ws.write("design", f"# Architecture Design\n\n{design_update}")
+            self._emit(Event(EventKind.FILE_WRITE, agent=agent_name, data={"file": "DESIGN.md"}))
 
         test_bit = self.ws.parse_section(response, "TEST_RESULTS_APPEND")
         if test_bit:
