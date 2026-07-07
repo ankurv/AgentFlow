@@ -38,3 +38,21 @@ AgentFlow supports enterprise-grade connections out of the box:
 - **Streamlined Debate Controls**: Complex agent settings were replaced with a simple "Debate Level" slider to control the depth of the plan.
 - **Max Token Failsafe**: A hard Token Limit input allows the Orchestrator to monitor `input + output` tokens across all 15 agents and pull the emergency brake if a debate spirals, saving API costs.
 - **1-Click Context Export**: A dedicated button instantly bundles your `DESIGN.md` and `PLAN.md` into your clipboard, perfectly formatted to be pasted into a coding agent.
+
+---
+
+## 🎨 Extending the Virtual Company (Custom Personas)
+
+AgentFlow is designed to be easily extensible. If your project requires a highly specific domain expert (e.g., a *Legal Compliance Officer* or a *Game Economy Balancer*), you can easily inject them into the Virtual Company.
+
+### How to add custom personas:
+1. Open `backend/orchestrator.py`.
+2. Locate the `SPECIALIZED_PERSONAS` dictionary at the top of the file.
+3. Add a new key for your role and write a strict, focused system prompt.
+   ```python
+   SPECIALIZED_PERSONAS = {
+       # ... existing roles ...
+       "legal_officer": "You are the LEGAL COMPLIANCE OFFICER. Your sole job is to review the architecture for GDPR, HIPAA, and CCPA violations. Aggressively flag any data storage designs that expose PII."
+   }
+   ```
+4. **That's it!** The Agent Factory will automatically pick up your new role, assign it a Base Provider (via the round-robin distribution), and make it available for the AI Coordinator to summon during the debate phase.
