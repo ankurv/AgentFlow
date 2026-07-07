@@ -607,7 +607,8 @@ async function loadUsers() {
                 <td style="padding:10px;">${u.username}</td>
                 <td style="padding:10px;">${u.role}</td>
                 <td style="padding:10px;">
-                  <button class="btn btn-secondary" onclick="resetUserPassword('${u.username}')">Force Reset Password</button>
+                  <button class="btn btn-secondary" onclick="resetUserPassword('${u.username}')">Reset Password</button>
+                  ${u.username === 'admin' ? '' : `<button class="btn" style="background:#dc3545; color:white;" onclick="deleteUser('${u.username}')">Delete</button>`}
                 </td>
               </tr>
             `;
@@ -647,14 +648,13 @@ async function resetUserPassword(username) {
 async function addUser() {
     const u = document.getElementById('newUsername').value;
     const p = document.getElementById('newUserPassword').value;
-    const r = document.getElementById('newUserRole').value;
     
     if (!u || !p) return alert("Fill in all fields");
     
     const res = await fetch('/users', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({username: u, password: p, role: r})
+        body: JSON.stringify({username: u, password: p, role: "user"})
     });
     
     if (res.ok) {
@@ -670,3 +670,14 @@ async function addUser() {
 // Check auth on boot
 window.addEventListener('load', checkAuth);
 
+
+async function deleteUser(username) {
+    if (!confirm(`Are you sure you want to delete the user '${username}'?`)) return;
+    const res = await fetch(`/users/${username}`, { method: 'DELETE' });
+    if (res.ok) {
+        loadUsers();
+    } else {
+        const err = await res.json().catch(()=>({}));
+        alert("Failed to delete user: " + (err.detail || "Unknown error"));
+    }
+}

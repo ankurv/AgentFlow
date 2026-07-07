@@ -92,6 +92,17 @@ class AuthManager:
         USERS_PATH.write_text(json.dumps(users, indent=2))
         return True
         
+
+    def delete_user(self, username: str) -> bool:
+        users = self._load_users()
+        if username not in users:
+            return False
+        if username == "admin":
+            return False # Prevent deleting root admin
+        del users[username]
+        USERS_PATH.write_text(json.dumps(users, indent=2))
+        return True
+
     def list_users(self) -> list:
         users = self._load_users()
         return [{"username": u, "role": d["role"]} for u, d in users.items()]

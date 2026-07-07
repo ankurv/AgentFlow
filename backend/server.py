@@ -119,9 +119,21 @@ class AddUserBody(BaseModel):
 def add_user(body: AddUserBody, session: Session = Depends(get_session)):
     if session.role != "admin":
         raise HTTPException(403, "Admins only")
-    success = auth_manager.add_user(body.username, body.password, body.role)
+    # Force role to user
+    success = auth_manager.add_user(body.username, body.password, "user")
     if not success:
         raise HTTPException(400, "User already exists")
+    return {"ok": True}
+
+@app.delete("/users/{username}")
+def delete_user(username: str, session: Session = Depends(get_session)):
+    if session.role != "admin":
+        raise HTTPException(403, "Admins only")
+    if username == "admin":
+        raise HTTPException(400, "Cannot delete root admin")
+    success = auth_manager.delete_user(username)
+    if not success:
+        raise HTTPException(404, "User not found")
     return {"ok": True}
 
 class ChangePasswordBody(BaseModel):
