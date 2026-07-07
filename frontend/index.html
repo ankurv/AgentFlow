@@ -27,7 +27,7 @@
   <div class="spacer"></div>
   <span id="loggedInUserLabel" style="color:var(--text); font-weight:600; margin-right:15px; font-size:13px; display:none;"></span>
   <button class="header-btn" onclick="submitLogout()" id="logoutBtn" style="margin-right:15px; display:none;">Logout</button>
-  <button class="header-btn" onclick="retryFailedTurn()" id="retryBtn" style="display:none">Retry failed turn</button>
+
 </header>
 
 <div class="project-strip">
@@ -124,6 +124,7 @@
             <button class="btn btn-secondary" id="resetBtn" onclick="resetRun()" style="display:none">Reset</button>
             <button class="btn btn-secondary" id="pauseBtn" onclick="pauseResume()" style="display:none">Pause</button>
             <button class="btn btn-danger" id="stopBtn" onclick="stopRun()" style="display:none">Stop</button>
+            <button class="btn btn-primary" onclick="retryFailedTurn()" id="retryBtn" style="display:none">Retry Failed Turn</button>
           </div>
         </div>
       </div>
