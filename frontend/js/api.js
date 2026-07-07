@@ -578,6 +578,14 @@ async function checkAuth() {
     const res = await originalFetch('/users/me');
     if (res.ok) {
         currentUser = await res.json();
+        const label = document.getElementById('loggedInUserLabel');
+        if (label) {
+            label.textContent = "👤 " + currentUser.username + " (" + currentUser.role + ")";
+            label.style.display = 'inline-block';
+        }
+        const btn = document.getElementById('logoutBtn');
+        if (btn) btn.style.display = 'inline-block';
+        
         if (currentUser.role === 'admin') {
             document.getElementById('adminSettingsBlock').style.display = 'block';
             loadUsers();
