@@ -342,7 +342,7 @@ class StartBody(BaseModel):
     max_debate_rounds: int = 6
     max_tokens: int = 100000
     max_build_iterations: int = 5
-    mode: str = "all"
+    mode: str = "debate"
 
 
 @app.post("/run/start")

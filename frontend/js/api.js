@@ -196,16 +196,7 @@ async function startRun(prompt) {
   mergedAgents.forEach(a => {
     if (!agentColors[a.name]) agentColors[a.name] = COLORS[colorIdx++ % COLORS.length];
   });
-
-  // Extract execution mode from prompt instructions
-  let mode = "all";
-  const ideaLower = idea.toLowerCase();
-  if (ideaLower.includes("debate only") || ideaLower.includes("design only") || (ideaLower.includes("debate") && !ideaLower.includes("build") && !ideaLower.includes("implement"))) {
-    mode = "debate";
-  } else if (ideaLower.includes("build only") || ideaLower.includes("implement only") || (ideaLower.includes("build") && !ideaLower.includes("debate") && !ideaLower.includes("design"))) {
-    mode = "build";
-  }
-
+  let mode = "debate"; // Hardcoded to debate since AgentFlow is an Architecture Studio
   totalTokens = 0;
   totalCost = 0;
   eventCount = 0;
