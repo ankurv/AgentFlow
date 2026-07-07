@@ -13,6 +13,19 @@ function getFileIcon(f) {
   return '<span class="file-icon" style="color:var(--muted)">📄</span>';
 }
 
+let monacoEditorInstance = null;
+
+function getMonacoLanguage(filename) {
+  const ext = filename.split('.').pop().toLowerCase();
+  if (['py'].includes(ext)) return 'python';
+  if (['js', 'ts'].includes(ext)) return 'javascript';
+  if (['html'].includes(ext)) return 'html';
+  if (['css'].includes(ext)) return 'css';
+  if (['json'].includes(ext)) return 'json';
+  if (['md'].includes(ext)) return 'markdown';
+  return 'plaintext';
+}
+
 function renderFileContent(filename, content) {
   currentFileContent = content;
   const container = document.getElementById('fileViewContainer');
@@ -23,50 +36,50 @@ function renderFileContent(filename, content) {
     return;
   }
 
-  const lines = content.split('\n');
-  let html = `
+  container.innerHTML = `
     <div class="ws-content-header">
       <span class="ws-content-path">${escHtml(filename)}</span>
       <div style="display:flex; gap:8px;">
-        <button class="btn btn-primary" onclick="startFileEdit('${escHtml(filename)}')" style="padding: 4px 10px; font-size: 11px">Edit</button>
-        <button class="btn btn-secondary" onclick="navigator.clipboard.writeText(currentFileContent);notify('Copied file contents to clipboard!')" style="padding: 4px 10px; font-size: 11px">Copy</button>
+        <button class="btn btn-primary" id="wsEditBtn" onclick="startFileEdit('${escHtml(filename)}')" style="padding: 4px 10px; font-size: 11px">Edit</button>
+        <button class="btn btn-secondary" onclick="navigator.clipboard.writeText(monacoEditorInstance ? monacoEditorInstance.getValue() : currentFileContent);notify('Copied file contents to clipboard!')" style="padding: 4px 10px; font-size: 11px">Copy</button>
       </div>
     </div>
-    <div class="code-editor">
+    <div id="monacoContainer" style="width:100%; height:calc(100% - 40px);"></div>
   `;
 
-  lines.forEach((line, index) => {
-    const isReview = line.includes('# REVIEW:') || line.includes('// REVIEW:') || line.includes('/* REVIEW:');
-    const reviewClass = isReview ? 'code-line review-highlight' : 'code-line';
-    html += `
-      <div class="${reviewClass}">
-        <span class="line-number">${index + 1}</span>
-        <span class="line-code">${escHtml(line) || '&nbsp;'}</span>
-      </div>
-    `;
-  });
-
-  html += '</div>';
-  container.innerHTML = html;
+  if (window.monacoReady && window.monaco) {
+    monacoEditorInstance = monaco.editor.create(document.getElementById('monacoContainer'), {
+      value: content,
+      language: getMonacoLanguage(filename),
+      theme: 'vs-dark',
+      readOnly: true,
+      minimap: { enabled: false },
+      automaticLayout: true,
+      scrollBeyondLastLine: false,
+      fontSize: 13
+    });
+  } else {
+    document.getElementById('monacoContainer').innerHTML = '<div style="padding:20px; color:var(--muted)">Loading editor...</div>';
+    window.onMonacoReady = () => {
+      renderFileContent(filename, currentFileContent);
+    };
+  }
 }
 
 function startFileEdit(filename) {
-  const container = document.getElementById('fileViewContainer');
-  if (!container) return;
-
-  container.innerHTML = `
-    <div class="ws-content-header">
+  const header = document.querySelector('.ws-content-header');
+  if (header) {
+    header.innerHTML = `
       <span class="ws-content-path">Editing: ${escHtml(filename)}</span>
       <div style="display:flex; gap:8px">
         <button class="btn btn-primary" onclick="saveFileEdit('${escHtml(filename)}')" style="padding: 4px 10px; font-size: 11px">Save</button>
         <button class="btn btn-secondary" onclick="cancelFileEdit('${escHtml(filename)}')" style="padding: 4px 10px; font-size: 11px">Cancel</button>
       </div>
-    </div>
-    <div class="code-editor" style="padding:0; overflow:hidden;">
-      <textarea id="fileEditArea" style="width:100%; height:100%; min-height:400px; padding:16px; border:none; background:transparent; color:var(--text); font-family:var(--mono); font-size:13px; resize:none; outline:none;" spellcheck="false"></textarea>
-    </div>
-  `;
-  document.getElementById('fileEditArea').value = currentFileContent;
+    `;
+  }
+  if (monacoEditorInstance) {
+    monacoEditorInstance.updateOptions({ readOnly: false });
+  }
 }
 
 function cancelFileEdit(filename) {
@@ -74,7 +87,7 @@ function cancelFileEdit(filename) {
 }
 
 async function saveFileEdit(filename) {
-  const newContent = document.getElementById('fileEditArea').value;
+  const newContent = monacoEditorInstance ? monacoEditorInstance.getValue() : currentFileContent;
   const isRootFile = ['design', 'plan', 'consensus', 'tests', 'questions'].includes(filename);
   
   const encodedName = filename.split('/').map(encodeURIComponent).join('/');

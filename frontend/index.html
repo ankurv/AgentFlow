@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AgentFlow</title>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>var require = { paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.41.0/min/vs' } };</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.41.0/min/vs/loader.min.js"></script>
+<script>
+  require(['vs/editor/editor.main'], function () {
+    window.monacoReady = true;
+    if (window.onMonacoReady) window.onMonacoReady();
+  });
+</script>
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
