@@ -123,13 +123,31 @@ function appendFeed(ev) {
           <span style="flex: 1">${escHtml(summary)}</span>
           ${detail ? `<button class="btn btn-secondary" style="padding: 2px 8px; font-size: 12px; font-weight: bold; line-height: 1; border-radius: 4px;" onclick="const d = this.parentElement.nextElementSibling; if(d.style.display === 'none'){d.style.display='block';this.innerText='-';}else{d.style.display='none';this.innerText='+';}">${ev.data.verdict === 'PAUSE_FOR_INPUT' ? '-' : '+'}</button>` : ''}
         </div>
-        ${detail ? `<div class="feed-detail" style="display: ${ev.data.verdict === 'PAUSE_FOR_INPUT' ? 'block' : 'none'}; margin-top: 8px;">${escHtml(detail)}</div>` : ''}
+        ${detail ? `<div class="feed-detail markdown-body" style="display: ${ev.data.verdict === 'PAUSE_FOR_INPUT' ? 'block' : 'none'}; margin-top: 8px;">${parseMarkdown(detail)}</div>` : ''}
       </div>
     </div>
   `;
 
   feed.appendChild(div);
   feed.scrollTop = feed.scrollHeight;
+  if (window.mermaid) { try { mermaid.run({ querySelector: '.mermaid' }); } catch(e) {} }
+}
+
+
+function parseMarkdown(text) {
+  if (!text) return '';
+  if (!window.marked) return escHtml(text);
+  
+  const renderer = new marked.Renderer();
+  renderer.code = function(code, language, isEscaped) {
+    if (language === 'mermaid') {
+      return `<div class="mermaid">${escHtml(code)}</div>`;
+    }
+    return `<pre><code class="language-${escHtml(language || 'plaintext')}">${escHtml(code)}</code></pre>`;
+  };
+  
+  marked.setOptions({ renderer: renderer, gfm: true, breaks: true });
+  return marked.parse(text);
 }
 
 function escHtml(s) {
