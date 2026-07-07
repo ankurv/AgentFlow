@@ -693,11 +693,6 @@ def event_history(state: AppState = Depends(get_state)):
     return {"events": state.event_log}
 
 
-_frontend = Path(__file__).parent.parent / "frontend"
-if _frontend.exists():
-    app.mount("/", StaticFiles(directory=str(_frontend), html=True), name="frontend")
-
-
 @app.on_event("shutdown")
 def shutdown_event():
     for state in app_states.values():
@@ -714,3 +709,7 @@ def admin_shutdown(session: Session = Depends(get_session)):
         os._exit(0)
     threading.Timer(0.5, killer).start()
     return {"ok": True, "message": "Server shutting down"}
+
+_frontend = Path(__file__).parent.parent / "frontend"
+if _frontend.exists():
+    app.mount("/", StaticFiles(directory=str(_frontend), html=True), name="frontend")
