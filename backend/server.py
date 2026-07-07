@@ -696,3 +696,22 @@ def event_history(state: AppState = Depends(get_state)):
 _frontend = Path(__file__).parent.parent / "frontend"
 if _frontend.exists():
     app.mount("/", StaticFiles(directory=str(_frontend), html=True), name="frontend")
+
+
+@app.on_event("shutdown")
+def shutdown_event():
+    for state in app_states.values():
+        if state.orchestrator:
+            state.orchestrator.stop()
+
+@app.post("/admin/shutdown")
+def admin_shutdown(session: Session = Depends(get_session)):
+    if session.username != "admin":
+        raise HTTPException(403, "Only admin can shut down the server")
+    import os
+    import signal
+    import threading
+    def killer():
+        os.kill(os.getpid(), signal.SIGINT)
+    threading.Timer(0.5, killer).start()
+    return {"ok": True, "message": "Server shutting down"}

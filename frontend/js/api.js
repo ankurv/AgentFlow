@@ -590,6 +590,7 @@ async function checkAuth() {
         
         if (currentUser.role === 'admin') {
             document.getElementById('adminSettingsBlock').style.display = 'block';
+            document.getElementById('shutdownBtn').style.display = 'inline-block';
             loadUsers();
         }
     }
@@ -709,5 +710,16 @@ async function updateTokens() {
     notify(`Tokens updated to ${maxTokens.toLocaleString()}.`);
   } else {
     notify(`Next run will use ${maxTokens.toLocaleString()} tokens limit.`);
+  }
+}
+
+async function shutdownServer() {
+  if (confirm("Are you sure you want to shut down the server? You will need to restart it manually from the terminal.")) {
+    try {
+      await fetch('/admin/shutdown', { method: 'POST' });
+      alert("Server is shutting down.");
+    } catch (e) {
+      alert("Error shutting down: " + e.message);
+    }
   }
 }
