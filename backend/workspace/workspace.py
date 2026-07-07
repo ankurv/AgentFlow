@@ -58,7 +58,27 @@ class Workspace:
     def path(self) -> str:
         return str(self.project_root)
 
+
+    def settings(self) -> dict:
+        import json
+        path = self.root / "settings.json"
+        if not path.exists():
+            return {}
+        try:
+            return json.loads(path.read_text())
+        except Exception:
+            return {}
+
+    def save_settings(self, new_settings: dict):
+        import json
+        self.ensure()
+        current = self.settings()
+        current.update(new_settings)
+        path = self.root / "settings.json"
+        path.write_text(json.dumps(current, indent=2))
+
     def ensure(self):
+
         self.project_root.mkdir(parents=True, exist_ok=True)
         self.root.mkdir(exist_ok=True)
         ignore = self.root / ".gitignore"

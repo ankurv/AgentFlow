@@ -11,12 +11,6 @@ function showTab(id, tabElement) {
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-const savedMaxTokens = localStorage.getItem('maxTokens');
-if (savedMaxTokens) {
-  const input = document.getElementById('maxTokensInput');
-  if (input) input.value = savedMaxTokens;
-}
-
 if (window.mermaid) {
   mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'loose' });
 }

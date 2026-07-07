@@ -253,6 +253,7 @@ def project_payload(state) -> dict:
         "path": state.workspace.path,
         "brief": state.workspace.brief(),
         "recent_runs": state.store.recent_runs() if state.store else [],
+        "settings": state.workspace.settings(),
     }
 
 
@@ -276,6 +277,13 @@ def save_project_brief(body: ProjectBriefIn, state: AppState = Depends(get_state
         raise HTTPException(400, "Open a project first")
     state.workspace.write_brief(body.content)
     return {"ok": True, "brief": state.workspace.brief()}
+
+@app.put("/project/settings")
+def save_project_settings(body: dict, state: AppState = Depends(get_state)):
+    if not state.workspace:
+        raise HTTPException(400, "Open a project first")
+    state.workspace.save_settings(body)
+    return {"ok": True, "settings": state.workspace.settings()}
 
 
 class AgentConfigIn(BaseModel):

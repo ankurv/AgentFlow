@@ -185,6 +185,10 @@ async function openProject() {
   projectOpen = true;
   currentProjectPath = data.path;
   document.getElementById('projectPath').value = data.path;
+  if (data.settings && data.settings.max_tokens) {
+    const el = document.getElementById('maxTokensInput');
+    if (el) el.value = data.settings.max_tokens;
+  }
   document.getElementById('projectState').textContent = 'Ready · project state loaded';
   document.getElementById('projectState').className = 'project-state ready';
   currentWsKey = 'dashboard';
@@ -201,6 +205,10 @@ async function loadCurrentProject() {
   projectOpen = true;
   currentProjectPath = data.path;
   document.getElementById('projectPath').value = data.path;
+  if (data.settings && data.settings.max_tokens) {
+    const el = document.getElementById('maxTokensInput');
+    if (el) el.value = data.settings.max_tokens;
+  }
   document.getElementById('projectState').textContent = 'Ready · project state loaded';
   document.getElementById('projectState').className = 'project-state ready';
   renderHistory(data.recent_runs || []);
