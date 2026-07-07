@@ -162,41 +162,43 @@ Your debate depth limit is: {max_debate_rounds} rounds.
 Current execution mode: {mode}
 
 Guidelines for Design & Architectural Gathering:
-1. **User-Centric Simplification**: Explicitly force the agents to evaluate all designs from an external user's perspective. If the proposed UX is complex, instruct agents to simplify it.
-2. **Scalability Analysis**: When designing architecture in DESIGN.md, you must dedicate a section named "## Scalability, Bottlenecks & Design Choices".
-3. **Architecture Diagrams**: ALWAYS include a visual flowchart of component connections under a "## Architecture Diagram" section in DESIGN.md using a code block tagged with "mermaid" (flowchart TD or LR).
-
-Depending on the mode, follow these structured instructions:
-- **all**: Run Phase 1, wait for user review, and then proceed to Phase 2.
-- **debate**: Focus ONLY on Phase 1 and Phase 2 deep-dive planning. Do NOT invoke developers to write code. Generate an exhaustive implementation tree and state VERDICT as COMPLETE.
-- **build**: Skip Phase 1 and jump directly to Phase 2 execution.
+1. **User-Centric Simplification**: Evaluate all designs from an external user's perspective. Simplify complex UI/UX.
+2. **Scalability Analysis**: Dedicate a "## Scalability, Bottlenecks & Design Choices" section in DESIGN.md.
+3. **Architecture Diagrams**: ALWAYS include a Mermaid.js flowchart in DESIGN.md.
+4. **Plan Structure (CRITICAL)**: PLAN.md MUST be a clean package covering EXACTLY these headers: Requirements, Non-Goals, Assumptions, Alternatives, Decisions, Risks, Acceptance Criteria, and Implementation Phases. Do NOT include debate transcripts in PLAN.md or DESIGN.md.
 
 Structured workflow description:
 1. **Phase 1 (High-Level Planning & Design)**:
-   - Perform requirement gathering and design a high-level task list in PLAN.md (the root nodes of the tree).
-   - Define the initial design concept in DESIGN.md (with the Mermaid flowchart and scalability sections).
-   - **Dynamic Summoning**: You have access to a large pool of specialized experts (e.g., red_team, ux_simplifier, cloud_architect). Read the user's idea carefully. You must selectively summon the agents that are relevant to this specific project by setting ## NEXT_AGENT to their role name. If multiple competing roles are available (e.g., architect_alpha vs architect_beta, sales_alpha vs sales_beta, marketing_alpha vs marketing_beta), you MUST force them to propose competing plans and rigorously debate the trade-offs before finalizing that section of the plan.
+   - **Dynamic Summoning**: You have access to a large pool of specialized experts. You must selectively summon them by setting ## NEXT_AGENT. If multiple competing roles are available, force them to propose competing plans and rigorously debate trade-offs.
 2. **Phase 2 (Deep-Dive Implementation Planning / Execution)**:
-   - For EACH task in PLAN.md, force the agents to debate exactly how to implement and test it.
-   - **Debate Limits (CRITICAL)**: Do NOT debate a single sub-item for more than {max_debate_rounds} turns. Force a decision, finalize the nested sub-tree for that item in PLAN.md, and move on.
-   - The final PLAN.md MUST be an exhaustive, deeply nested markdown list (a tree).
-   - If mode is 'all' or 'build', execute the task by calling the developer, reviewer, and tester. If mode is 'debate', skip execution and just finalize the tree plan.
+   - For EACH task in PLAN.md, force agents to debate implementation.
+   - **Debate Limits (CRITICAL)**: Do NOT debate a single sub-item for more than {max_debate_rounds} turns. Force a decision.
+   - If mode is 'debate', skip execution and finalize the tree plan.
 
 Available agents in the virtual company pool:
 {agents_list}
 
 Read the current workspace files carefully and decide what should happen next.
-To run an agent, output their name/role under ## NEXT_AGENT and specify what they should do under ## INSTRUCTIONS.
-If you need clarification from the human user to make the right design choices, output USER under ## NEXT_AGENT, state the question(s) under ## INSTRUCTIONS, and set the verdict to PAUSE_FOR_INPUT.
-If you believe the design and implementation are fully complete, correct, and verified, output COMPLETE under ## VERDICT.
 
-Respond in this exact format:
+Respond in this EXACT format:
+
+## SUMMON_REASON
+<Why are you choosing this specific agent? What is their exact expertise needed right now?>
+
+## EXPECTED_CONTRIBUTION
+<What exactly do you expect them to output in their turn?>
 
 ## NEXT_AGENT
 <exact name of the agent to run next, or USER>
 
 ## INSTRUCTIONS
 <specific instructions or guidance for this agent's turn, or your clarifying question for the user>
+
+## DECISION_CHECKPOINT
+<ONLY output this section if VERDICT is PAUSE_FOR_INPUT. Present 2-3 options, their trade-offs, your recommendation, and the consequence of each choice.>
+
+## QUALITY_GATE
+<ONLY output this section if VERDICT is COMPLETE. Verify requirement coverage, task acceptance criteria, unresolved questions, contradictory decisions, risk mitigations, and valid diagrams. Output PASS or FAIL.>
 
 ## VERDICT
 <CONTINUE, COMPLETE, or PAUSE_FOR_INPUT>"""
@@ -816,6 +818,8 @@ class Orchestrator:
         coordinator.config.system_prompt = system_prompt
 
         max_steps = 30
+        previous_summon = None
+        consecutive_loops = 0
         for step in range(1, max_steps + 1):
             await self._wait_if_paused()
             if not self._running:
@@ -849,6 +853,18 @@ class Orchestrator:
             }))
 
             next_agent_name, instructions, verdict = self._parse_coordinator_response(response)
+            
+            # Loop detection
+            if verdict == "CONTINUE":
+                summon_hash = f"{next_agent_name}:{instructions}"
+                if summon_hash == previous_summon:
+                    consecutive_loops += 1
+                    if consecutive_loops >= 1: # Tried exact same thing twice
+                        self._emit(Event(EventKind.ERROR, agent=coordinator.name, data={"error": "Loop detected. Terminating debate to prevent stall."}))
+                        break
+                else:
+                    consecutive_loops = 0
+                    previous_summon = summon_hash
 
             if verdict in {"COMPLETE", "PAUSE", "PAUSE_FOR_INPUT"}:
                 status = "complete" if verdict == "COMPLETE" else "waiting_for_approval"
@@ -904,6 +920,20 @@ class Orchestrator:
         next_agent = self.ws.parse_section(response, "NEXT_AGENT").strip()
         instructions = self.ws.parse_section(response, "INSTRUCTIONS").strip()
         verdict = self.ws.parse_section(response, "VERDICT").strip().upper()
+        
+        # Quality Gate Check
+        if verdict == "COMPLETE":
+            quality_gate = self.ws.parse_section(response, "QUALITY_GATE").strip()
+            if not quality_gate or "FAIL" in quality_gate.upper():
+                raise RuntimeError("VERDICT was COMPLETE, but QUALITY_GATE was missing or FAILED. You must provide a passing QUALITY_GATE before completing the plan.")
+                
+        # Decision Checkpoint Check
+        if verdict == "PAUSE_FOR_INPUT":
+            decision = self.ws.parse_section(response, "DECISION_CHECKPOINT").strip()
+            if not decision:
+                raise RuntimeError("VERDICT was PAUSE_FOR_INPUT, but DECISION_CHECKPOINT was missing. You must provide options and trade-offs for the user.")
+            self.ws.write("questions", f"# Decision Checkpoint\n\n{decision}")
+            self._emit(Event(EventKind.FILE_WRITE, agent="Coordinator", data={"file": "QUESTIONS.md"}))
         
         questions = self.ws.parse_section(response, "QUESTIONS").strip()
         if questions:
