@@ -61,6 +61,7 @@ class AgentConfig:
     role: str = ""
     model: str = ""
     api_key: str = ""
+    base_url: str = ""
     # Runtime-only project root. It is injected by the server and never persisted.
     working_directory: str = ""
     cli_command: str = ""

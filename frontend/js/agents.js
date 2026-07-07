@@ -168,6 +168,23 @@ function renderSingleCard(cfg, idx, isGlobal) {
             <input value="${escAttr(data.cli_command||'')}" placeholder="e.g. ollama run llama3" oninput="editingAgentData.cli_command=this.value">
           </div>
           <details style="grid-column: span 2; margin-top: 6px;">
+            <summary style="font-size:11px;font-weight:600;color:var(--accent2);cursor:pointer;user-select:none;outline:none">Enterprise Endpoints</summary>
+            <div class="form-grid" style="margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border)">
+              <div class="form-group full">
+                <label>Base URL (Foundry / DeepInfra)</label>
+                <input value="${escAttr(data.base_url||'')}" placeholder="e.g. https://api.endpoints.anyscale.com/v1" oninput="editingAgentData.base_url=this.value">
+              </div>
+              <div class="form-group full">
+                <label>Cloud Platform (Anthropic)</label>
+                <select onchange="setEditingExtra('platform', this.value)">
+                  <option value="" ${!data.extra?.platform ? 'selected' : ''}>Standard Public API</option>
+                  <option value="bedrock" ${data.extra?.platform === 'bedrock' ? 'selected' : ''}>AWS Bedrock</option>
+                  <option value="vertex" ${data.extra?.platform === 'vertex' ? 'selected' : ''}>GCP Vertex AI</option>
+                </select>
+              </div>
+            </div>
+          </details>
+          <details style="grid-column: span 2; margin-top: 6px;">
             <summary style="font-size:11px;font-weight:600;color:var(--accent2);cursor:pointer;user-select:none;outline:none">Override System Prompt</summary>
             <div class="form-grid" style="margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border)">
               <div class="form-group full">

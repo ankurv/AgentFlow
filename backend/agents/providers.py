@@ -22,7 +22,20 @@ class ClaudeAgent(AgentBase):
         import anthropic
 
         key = self.config.api_key or os.environ.get("ANTHROPIC_API_KEY", "")
-        self._client = anthropic.Anthropic(api_key=key) if key else anthropic.Anthropic()
+        base_url = getattr(self.config, "base_url", "")
+        platform = self.config.extra.get("platform", "standard")
+        
+        if platform == "bedrock":
+            self._client = anthropic.AnthropicBedrock()
+        elif platform == "vertex":
+            self._client = anthropic.AnthropicVertex()
+        else:
+            kwargs = {}
+            if key:
+                kwargs["api_key"] = key
+            if base_url:
+                kwargs["base_url"] = base_url
+            self._client = anthropic.Anthropic(**kwargs)
 
     def reconfigure(self, config: AgentConfig):
         previous_key = self.config.api_key
@@ -69,7 +82,15 @@ class OpenAIAgent(AgentBase):
         import openai
 
         key = self.config.api_key or os.environ.get("OPENAI_API_KEY", "")
-        self._client = openai.OpenAI(api_key=key) if key else openai.OpenAI()
+        base_url = getattr(self.config, "base_url", "")
+        
+        kwargs = {}
+        if key:
+            kwargs["api_key"] = key
+        if base_url:
+            kwargs["base_url"] = base_url
+            
+        self._client = openai.OpenAI(**kwargs)
 
     def reconfigure(self, config: AgentConfig):
         previous_key = self.config.api_key

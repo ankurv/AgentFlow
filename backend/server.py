@@ -195,6 +195,7 @@ class AgentConfigIn(BaseModel):
     role: str = ""
     model: str = ""
     api_key: str = ""
+    base_url: str = ""
     cli_command: str = ""
     system_prompt: str = ""
     max_history_turns: int = 20
@@ -205,7 +206,8 @@ def to_agent_config(config: dict) -> AgentConfig:
     return AgentConfig(
         id=config.get("id", ""), name=config["name"], kind=config["kind"],
         role=config.get("role", ""), model=config.get("model", ""),
-        api_key=config.get("api_key", ""), cli_command=config.get("cli_command", ""),
+        api_key=config.get("api_key", ""),
+        base_url=config.get("base_url", ""), cli_command=config.get("cli_command", ""),
         working_directory=state.workspace.path if state.workspace else "",
         system_prompt=config.get("system_prompt", ""),
         max_history_turns=config.get("max_history_turns", 20),
