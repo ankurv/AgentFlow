@@ -157,44 +157,19 @@ function renderSingleCard(cfg, idx, isGlobal) {
             <label for="edit-coordinator-${uid}" style="cursor:pointer;font-weight:600;font-size:11px;user-select:none;margin:0;text-transform:none">Team Coordinator (acts as manager of debate & execution loop)</label>
           </div>
           
+          <div class="form-group full">
+            <label>API Key</label>
+            <input type="password" value="${escAttr(data.api_key||'')}" placeholder="fallback to env var" oninput="editingAgentData.api_key=this.value" autocomplete="new-password" data-lpignore="true">
+          </div>
+          <div class="form-group full">
+            <label>CLI command (for local models)</label>
+            <input value="${escAttr(data.cli_command||'')}" placeholder="e.g. ollama run llama3" oninput="editingAgentData.cli_command=this.value">
+          </div>
           <details style="grid-column: span 2; margin-top: 6px;">
-            <summary style="font-size:11px;font-weight:600;color:var(--accent2);cursor:pointer;user-select:none;outline:none">Advanced Settings</summary>
+            <summary style="font-size:11px;font-weight:600;color:var(--accent2);cursor:pointer;user-select:none;outline:none">Override System Prompt</summary>
             <div class="form-grid" style="margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border)">
               <div class="form-group full">
-                <label>API Key</label>
-                <input type="password" value="${escAttr(data.api_key||'')}" placeholder="fallback to env var" oninput="editingAgentData.api_key=this.value" autocomplete="new-password" data-lpignore="true">
-              </div>
-              <div class="form-group full">
-                <label>CLI command (for local models)</label>
-                <input value="${escAttr(data.cli_command||'')}" placeholder="e.g. ollama run llama3" oninput="editingAgentData.cli_command=this.value">
-              </div>
-              <div class="form-group full">
-                <label>System Prompt (overrides default roles)</label>
                 <textarea style="height:60px" oninput="editingAgentData.system_prompt=this.value">${escHtml(data.system_prompt||'')}</textarea>
-              </div>
-              <div class="form-group">
-                <label>Max history turns</label>
-                <input type="number" min="1" value="${data.max_history_turns||20}" oninput="editingAgentData.max_history_turns=parseInt(this.value)||20">
-              </div>
-              <div class="form-group">
-                <label>Input cost /M tok</label>
-                <input type="number" step="0.01" value="${data.extra?.input_cost_per_million??''}" placeholder="auto" onchange="setEditingExtra('input_cost_per_million', this.value)">
-              </div>
-              <div class="form-group">
-                <label>Cached input cost</label>
-                <input type="number" step="0.01" value="${data.extra?.cached_input_cost_per_million??''}" placeholder="auto" onchange="setEditingExtra('cached_input_cost_per_million', this.value)">
-              </div>
-              <div class="form-group">
-                <label>Output cost</label>
-                <input type="number" step="0.01" value="${data.extra?.output_cost_per_million??''}" placeholder="auto" onchange="setEditingExtra('output_cost_per_million', this.value)">
-              </div>
-              <div class="form-group">
-                <label>Retry base (sec)</label>
-                <input type="number" min="1" value="${data.extra?.rate_limit_retry_seconds??30}" oninput="setEditingExtra('rate_limit_retry_seconds', this.value)">
-              </div>
-              <div class="form-group">
-                <label>Max retry wait (sec)</label>
-                <input type="number" min="1" value="${data.extra?.rate_limit_max_wait_seconds??900}" oninput="setEditingExtra('rate_limit_max_wait_seconds', this.value)">
               </div>
             </div>
           </details>
