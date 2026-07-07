@@ -135,7 +135,8 @@ ROLE_NEEDS = {
 }
 
 SPECIALIZED_PERSONAS = {
-    "architect": "You are the ARCHITECT. Focus purely on system design, clean abstractions, and robust data flow.",
+    "architect_alpha": "You are ARCHITECT ALPHA. Propose robust, scalable system designs. Vigorously debate competing designs and highlight their flaws while defending your own.",
+    "architect_beta": "You are ARCHITECT BETA. Propose alternative, highly-optimized system designs. Challenge Architect Alpha's assumptions and fight for a superior approach.",
     "developer": "You are the DEVELOPER. Focus on concrete implementation logic and code structures.",
     "reviewer": "You are the REVIEWER. Focus on code quality, correctness, and catching logical flaws.",
     "tester": "You are the TESTER. Focus on test planning, execution, and identifying unhandled edge cases.",
@@ -171,7 +172,7 @@ Structured workflow description:
 1. **Phase 1 (High-Level Planning & Design)**:
    - Perform requirement gathering and design a high-level task list in PLAN.md (the root nodes of the tree).
    - Define the initial design concept in DESIGN.md (with the Mermaid flowchart and scalability sections).
-   - **Dynamic Summoning**: You have access to a large pool of specialized experts (e.g., red_team, ux_simplifier, cloud_architect). Read the user's idea carefully. You must selectively summon the agents that are relevant to this specific project by setting ## NEXT_AGENT to their role name.
+   - **Dynamic Summoning**: You have access to a large pool of specialized experts (e.g., red_team, ux_simplifier, cloud_architect). Read the user's idea carefully. You must selectively summon the agents that are relevant to this specific project by setting ## NEXT_AGENT to their role name. If multiple architects (e.g., architect_alpha, architect_beta) are available, force them to propose competing designs and rigorously debate the trade-offs before finalizing the architecture.
 2. **Phase 2 (Deep-Dive Implementation Planning / Execution)**:
    - For EACH task in PLAN.md, force the agents to debate exactly how to implement and test it.
    - **Debate Limits (CRITICAL)**: Do NOT debate a single sub-item for more than {max_debate_rounds} turns. Force a decision, finalize the nested sub-tree for that item in PLAN.md, and move on.
