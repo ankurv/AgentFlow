@@ -56,13 +56,16 @@ DEBATE_SYSTEM = """You are one of {n} agents collaborating to design a software 
 Each agent may have a standing perspective. Contribute through your own expertise while
 challenging weak ideas and building on strong ones. Be specific and opinionated.
 
+CRITICAL: You must explicitly evaluate every design decision through the lens of an external end-user.
+Any overly complex UI/UX or convoluted flows must be aggressively simplified. 
+
 Respond in this exact format:
 
 ## DESIGN_APPEND
-<your contribution to the design — proposal, critique, or refinement>
+<your contribution to the design — proposal, critique, refinement, and user-experience evaluation>
 
 ## PLAN_UPDATE
-<complete updated content of PLAN.md — keep existing tasks, add/revise yours>
+<complete updated content of PLAN.md — use nested tree-structures (e.g. nested lists) for sub-tasks>
 
 ## CONSENSUS_APPEND
 <your reasoning this round>
@@ -133,36 +136,30 @@ ROLE_NEEDS = {
 
 COORDINATOR_SYSTEM = """You are the COORDINATOR of an autonomous software engineering team.
 Your goal is to coordinate the team's agents to design, build, review, and test a software product based on the user's idea.
+Your debate depth limit is: {max_debate_rounds} rounds.
 
 Current execution mode: {mode}
 
 Guidelines for Design & Architectural Gathering:
-1. **Collaborative Requirement Brainstorming**: If the user's initial prompt or idea is brief, ambiguous, or lacks performance constraints, call other agents to brainstorm the architectural requirements and critique the brief. Once the team has debated the requirements (e.g., for 1-2 turns), compile their open questions. **IMPORTANT**: If you have more than 2 or 3 questions, DO NOT ask them in the chat feed. Instead, write them out clearly under a `## QUESTIONS` section in your response. The system will save this to `QUESTIONS.md`. Then, set `## NEXT_AGENT` to USER, and set the `## VERDICT` to PAUSE_FOR_INPUT, instructing the user to edit `QUESTIONS.md` in the Architect Dashboard.
-2. **Scalability Analysis**: When designing architecture in DESIGN.md, you must dedicate a section named "## Scalability, Bottlenecks & Design Choices". Analyze performance implications, caching, database indexing, and potential bottlenecks (e.g. locks, network hops, memory footprint).
-3. **Architecture Diagrams**: ALWAYS include a visual flowchart of component connections under a "## Architecture Diagram" section in DESIGN.md using a code block tagged with "mermaid" (flowchart TD or LR). E.g.
-   ```mermaid
-   flowchart TD
-     A[Frontend] --> B[API Server]
-     B --> C[(Database)]
-   ```
+1. **User-Centric Simplification**: Explicitly force the agents to evaluate all designs from an external user's perspective. If the proposed UX is complex, instruct agents to simplify it.
+2. **Scalability Analysis**: When designing architecture in DESIGN.md, you must dedicate a section named "## Scalability, Bottlenecks & Design Choices".
+3. **Architecture Diagrams**: ALWAYS include a visual flowchart of component connections under a "## Architecture Diagram" section in DESIGN.md using a code block tagged with "mermaid" (flowchart TD or LR).
 
 Depending on the mode, follow these structured instructions:
-- **all**: Run Phase 1 (Planning & Design reviews), wait/pause for user review, and then proceed to Phase 2 (Task-by-task execution).
-- **debate**: Focus ONLY on Phase 1 (High-Level Planning & Design reviews). Once the plans/designs are refined and reviewed, state VERDICT as COMPLETE. Do not proceed to Phase 2.
-- **build**: Skip Phase 1 and jump directly to Phase 2 (Task-by-task execution) based on the tasks already listed in PLAN.md.
+- **all**: Run Phase 1, wait for user review, and then proceed to Phase 2.
+- **debate**: Focus ONLY on Phase 1 and Phase 2 deep-dive planning. Do NOT invoke developers to write code. Generate an exhaustive implementation tree and state VERDICT as COMPLETE.
+- **build**: Skip Phase 1 and jump directly to Phase 2 execution.
 
 Structured workflow description:
 1. **Phase 1 (High-Level Planning & Design)**:
-   - Perform requirement gathering and design a high-level task list (ideally with subtasks) in PLAN.md. 
+   - Perform requirement gathering and design a high-level task list in PLAN.md (the root nodes of the tree).
    - Define the initial design concept in DESIGN.md (with the Mermaid flowchart and scalability sections).
-   - Call other agents (by setting ## NEXT_AGENT) to review, critique, and improve this high-level task list and design.
-   - Once other agents have reviewed, present the plan/design to the human user for review by pausing or outputting the next step.
-2. **Phase 2 (Task-by-task Debate & Execution)**:
-   - Select the first pending task/subtask from PLAN.md.
-   - Further debate this specific task/subtask. Prompt agents to create detailed design and specifications in ImplementationPlan.md.
-   - Execute the task: call the developer to write code, call the reviewer to check, and call the tester to verify.
-   - Once the task is completed and verified, check it off in PLAN.md with [x].
-   - Repeat for each task/subtask in PLAN.md until all tasks are checked off.
+   - Call other agents (by setting ## NEXT_AGENT) to review and critique the high-level design.
+2. **Phase 2 (Deep-Dive Implementation Planning / Execution)**:
+   - For EACH task in PLAN.md, force the agents to debate exactly how to implement and test it.
+   - **Debate Limits (CRITICAL)**: Do NOT debate a single sub-item for more than {max_debate_rounds} turns. Force a decision, finalize the nested sub-tree for that item in PLAN.md, and move on.
+   - The final PLAN.md MUST be an exhaustive, deeply nested markdown list (a tree).
+   - If mode is 'all' or 'build', execute the task by calling the developer, reviewer, and tester. If mode is 'debate', skip execution and just finalize the tree plan.
 
 Available agents in the team:
 {agents_list}
@@ -790,7 +787,7 @@ class Orchestrator:
     async def _coordinator_loop(self, coordinator: AgentBase):
         other_agents = [a for a in self.agents if a.name != coordinator.name]
         agents_list = "\n".join(f"- {a.name}: {a.config.role or 'Contributor'}" for a in other_agents)
-        system_prompt = COORDINATOR_SYSTEM.format(agents_list=agents_list, mode=self.mode)
+        system_prompt = COORDINATOR_SYSTEM.format(agents_list=agents_list, mode=self.mode, max_debate_rounds=self.max_debate_rounds)
 
         orig_system = coordinator.config.system_prompt
         coordinator.config.system_prompt = system_prompt

@@ -222,7 +222,7 @@ async function startRun(prompt) {
     body: JSON.stringify({
       idea,
       project_path: currentProjectPath,
-      max_debate_rounds: 20,
+      max_debate_rounds: parseInt(document.getElementById('debateRoundsSlider').value, 10),
       max_build_iterations: 10,
       mode: mode,
     })
