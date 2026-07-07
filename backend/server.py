@@ -370,10 +370,11 @@ async def start_run(body: StartBody):
     agents = []
     try:
         from .orchestrator import SPECIALIZED_PERSONAS
-        base_config = state.merged_configs[0]
+        base_configs = state.merged_configs
         
-        # 1. Spawn the Virtual Company from the Base Provider
-        for role, system_prompt in SPECIALIZED_PERSONAS.items():
+        # 1. Spawn the Virtual Company, distributing roles across all provided base configs (Round-Robin)
+        for i, (role, system_prompt) in enumerate(SPECIALIZED_PERSONAS.items()):
+            base_config = base_configs[i % len(base_configs)]
             expert = base_config.copy()
             expert["id"] = f"{base_config.get('id', 'base')}_{role}"
             expert["name"] = role

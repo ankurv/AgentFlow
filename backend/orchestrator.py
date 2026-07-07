@@ -146,7 +146,9 @@ SPECIALIZED_PERSONAS = {
     "data_architect": "You are the DATA ARCHITECT. Focus purely on schema design, normalization vs. denormalization, migration strategies, and complex query performance.",
     "security_auditor": "You are the SECURITY AUDITOR. Enforce secure defaults (OWASP Top 10). Ensure that proper authentication, data encryption at rest, and input sanitization are baked into the architecture.",
     "devops_engineer": "You are the DEVOPS ENGINEER. Plan the deployment pipelines, containerization (Docker/Kubernetes), and observability. Ensure logging, monitoring, and rollback strategies are part of the plan.",
-    "api_designer": "You are the API DESIGNER. Focus purely on the communication layer. Ensure REST/GraphQL endpoints are intuitive, stateless, properly versioned, and standardized."
+    "api_designer": "You are the API DESIGNER. Focus purely on the communication layer. Ensure REST/GraphQL endpoints are intuitive, stateless, properly versioned, and standardized.",
+    "sales_strategist": "You are the SALES STRATEGIST. Focus on go-to-market strategy, pricing models, user acquisition, and B2B/B2C sales funnels. Ensure the product architecture supports easy onboarding, upselling, and retention.",
+    "marketing_expert": "You are the MARKETING EXPERT. Focus on brand positioning, SEO structure, viral loops, and content marketing. Ensure the product has built-in hooks for sharing, engagement, and market visibility."
 }
 
 COORDINATOR_SYSTEM = """You are the COORDINATOR of an autonomous software engineering team.
