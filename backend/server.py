@@ -340,6 +340,7 @@ class StartBody(BaseModel):
     project_path: str = ""
     save_brief: bool = False
     max_debate_rounds: int = 6
+    max_tokens: int = 100000
     max_build_iterations: int = 5
     mode: str = "all"
 
@@ -403,6 +404,7 @@ async def start_run(body: StartBody):
         workspace=state.workspace,
         event_cb=broadcast,
         max_debate_rounds=body.max_debate_rounds,
+        max_tokens=body.max_tokens,
         max_build_iterations=body.max_build_iterations,
         require_approval=True,
         mode=body.mode,

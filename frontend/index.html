@@ -35,7 +35,10 @@
   <span class="project-state" id="projectState">No project open</span>
   <div style="flex:1"></div>
   <div style="display:flex; align-items:center; gap:10px; margin-right: 16px;">
-    <span class="project-label">Debate Level: <span id="debateLevelLabel" style="color:var(--text);font-weight:bold;display:inline-block;width:12px;">3</span></span>
+    <button class="btn btn-secondary" onclick="exportContext()" style="margin-right: 15px;">Export Context</button>
+    <span class="project-label">Max Tokens:</span>
+    <input type="number" id="maxTokensInput" value="100000" style="width: 80px; padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text);">
+    <span class="project-label" style="margin-left:10px;">Debate Level: <span id="debateLevelLabel" style="color:var(--text);font-weight:bold;display:inline-block;width:12px;">3</span></span>
     <input type="range" id="debateRoundsSlider" min="1" max="10" value="3" oninput="document.getElementById('debateLevelLabel').innerText=this.value" style="width: 100px; accent-color: var(--accent);">
   </div>
 </div>

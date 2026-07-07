@@ -223,6 +223,7 @@ async function startRun(prompt) {
       idea,
       project_path: currentProjectPath,
       max_debate_rounds: parseInt(document.getElementById('debateRoundsSlider').value, 10),
+      max_tokens: parseInt(document.getElementById('maxTokensInput').value, 10) || 100000,
       max_build_iterations: 10,
       mode: mode,
     })
@@ -510,3 +511,18 @@ function renderPlanProgress(markdown) {
   }
 }
 
+
+async function exportContext() {
+  try {
+    const planRes = await fetch('/workspace/file/plan');
+    const planData = planRes.ok ? await planRes.json() : {content: 'No PLAN.md found.'};
+    const designRes = await fetch('/workspace/file/design');
+    const designData = designRes.ok ? await designRes.json() : {content: 'No DESIGN.md found.'};
+    
+    const bundled = `# Architecture Design\n\n${designData.content}\n\n# Implementation Plan\n\n${planData.content}`;
+    await navigator.clipboard.writeText(bundled);
+    alert('DESIGN.md and PLAN.md bundled and copied to clipboard! Ready to paste into Claude/Codex.');
+  } catch (e) {
+    alert('Failed to export context: ' + e.message);
+  }
+}

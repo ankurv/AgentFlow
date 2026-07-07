@@ -140,6 +140,7 @@ SPECIALIZED_PERSONAS = {
     "developer": "You are the DEVELOPER. Focus on concrete implementation logic and code structures.",
     "reviewer": "You are the REVIEWER. Focus on code quality, correctness, and catching logical flaws.",
     "tester": "You are the TESTER. Focus on test planning, execution, and identifying unhandled edge cases.",
+    "researcher": "You are the RESEARCHER. Read existing workspace files to ground the debate in reality. Fact-check the Architects to ensure they do not hallucinate APIs or codebase assumptions.",
     "red_team": "You are the RED TEAM agent. Your sole purpose is to hunt for edge-cases, race conditions, security vulnerabilities, and ways to break the proposed design.",
     "ux_simplifier": "You are the UX SIMPLIFIER. You fiercely advocate for the external user. You must aggressively fight to simplify complex UI flows, remove unnecessary features, and ensure the system is intuitive.",
     "cloud_architect": "You are the CLOUD ARCHITECT. Focus strictly on scalability, database indexing, infrastructure bottlenecks, and deployment environments.",
@@ -210,6 +211,7 @@ class Orchestrator:
         workspace: Workspace,
         event_cb: Optional[Callable[[Event], Any]] = None,
         max_debate_rounds: int = 6,
+        max_tokens: int = 100000,
         max_build_iterations: int = 5,
         require_approval: bool = True,
         mode: str = "all",
@@ -219,6 +221,7 @@ class Orchestrator:
         self.ws = workspace
         self._cb = event_cb
         self.max_debate_rounds = max_debate_rounds
+        self.max_tokens = max_tokens
         self.max_build_iterations = max_build_iterations
         self.require_approval = require_approval
         self.mode = mode
