@@ -233,7 +233,7 @@ class ProjectBriefIn(BaseModel):
     content: str
 
 
-def project_payload() -> dict:
+def project_payload(state) -> dict:
     if not state.workspace:
         return {"open": False, "path": "", "brief": "", "recent_runs": []}
     return {
@@ -246,7 +246,7 @@ def project_payload() -> dict:
 
 @app.get("/project")
 def get_project(state: AppState = Depends(get_state)):
-    return project_payload()
+    return project_payload(state)
 
 
 @app.post("/project/open")
@@ -255,7 +255,7 @@ def open_project(body: ProjectOpenIn, state: AppState = Depends(get_state)):
         state.open_project(body.path)
     except (OSError, ValueError) as exc:
         raise HTTPException(400, str(exc)) from exc
-    return {"ok": True, **project_payload(), "agents": state.configs}
+    return {"ok": True, **project_payload(state), "agents": state.configs}
 
 
 @app.put("/project/brief")
