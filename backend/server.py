@@ -709,9 +709,8 @@ def admin_shutdown(session: Session = Depends(get_session)):
     if session.username != "admin":
         raise HTTPException(403, "Only admin can shut down the server")
     import os
-    import signal
     import threading
     def killer():
-        os.kill(os.getpid(), signal.SIGINT)
+        os._exit(0)
     threading.Timer(0.5, killer).start()
     return {"ok": True, "message": "Server shutting down"}

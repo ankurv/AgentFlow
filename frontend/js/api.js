@@ -716,8 +716,13 @@ async function updateTokens() {
 async function shutdownServer() {
   if (confirm("Are you sure you want to shut down the server? You will need to restart it manually from the terminal.")) {
     try {
-      await fetch('/admin/shutdown', { method: 'POST' });
-      alert("Server is shutting down.");
+      const res = await fetch('/admin/shutdown', { method: 'POST' });
+      if (res.ok) {
+        alert("Server is shutting down.");
+      } else {
+        const text = await res.text();
+        alert("Failed to shut down: " + text);
+      }
     } catch (e) {
       alert("Error shutting down: " + e.message);
     }
