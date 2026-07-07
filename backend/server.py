@@ -562,11 +562,16 @@ def pause_run(state: AppState = Depends(get_state)):
     return {"ok": True, "status": state.status}
 
 
+class ResumeBody(BaseModel):
+    max_tokens: Optional[int] = None
+
 @app.post("/run/resume")
-def resume_run(state: AppState = Depends(get_state)):
+def resume_run(body: Optional[ResumeBody] = None, state: AppState = Depends(get_state)):
     if state.orchestrator and state.orchestrator.failed_turn:
         raise HTTPException(409, "Use Retry failed turn after fixing the agent")
     if state.orchestrator:
+        if body and body.max_tokens is not None:
+            state.orchestrator.max_tokens = body.max_tokens
         state.orchestrator.resume()
         state.status = "running"
     return {"ok": True, "status": state.status}

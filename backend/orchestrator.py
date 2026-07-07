@@ -377,7 +377,7 @@ class Orchestrator:
                 "step": 1, "response": response,
                 **self._usage_event(target_agent),
             }))
-            if self._enforce_token_budget("direct_chat", {"step": 1, "agent": target_agent.name}):
+            if await self._enforce_token_budget("direct_chat", {"step": 1, "agent": target_agent.name}):
                 return self.ws.snapshot()
             
             self._running = False
@@ -466,7 +466,7 @@ class Orchestrator:
                     "round": round_num, "response": response,
                     **self._usage_event(agent),
                 }))
-                if self._enforce_token_budget("debate", {"round": round_num, "agent": agent.name}):
+                if await self._enforce_token_budget("debate", {"round": round_num, "agent": agent.name}):
                     return
                 self._emit(Event(EventKind.VOTE, agent=agent.name,
                                  data={"vote": vote, "round": round_num}))
@@ -574,7 +574,7 @@ class Orchestrator:
                     "response": response,
                     **self._usage_event(agent),
                 }))
-                if self._enforce_token_budget("build", {"iteration": iteration, "role": role, "agent": agent.name}):
+                if await self._enforce_token_budget("build", {"iteration": iteration, "role": role, "agent": agent.name}):
                     return
                 self._emit(Event(EventKind.VERDICT, agent=agent.name,
                                  data={"role": role, "verdict": verdict, "iteration": iteration}))
@@ -829,23 +829,25 @@ class Orchestrator:
     def _record_turn_usage(self, agent: AgentBase):
         self.run_token_total += agent.last_usage.total_tokens
 
-    def _enforce_token_budget(self, phase: str, context: Optional[dict] = None) -> bool:
-        if self.max_tokens <= 0 or self.run_token_total < self.max_tokens:
-            return False
-
-        self._budget_exhausted = True
-        self._running = False
-        self._pause_event.set()
-        payload = {
-            "phase": phase,
-            "status": "budget_exhausted",
-            "run_total_tokens": self.run_token_total,
-            "run_max_tokens": self.max_tokens,
-        }
-        if context:
-            payload.update(context)
-        self._emit(Event(EventKind.PHASE, data=payload))
-        return True
+    async def _enforce_token_budget(self, phase: str, context: Optional[dict] = None) -> bool:
+        while self.max_tokens > 0 and self.run_token_total >= self.max_tokens:
+            self._budget_exhausted = True
+            payload = {
+                "phase": phase,
+                "status": "budget_exhausted",
+                "run_total_tokens": self.run_token_total,
+                "run_max_tokens": self.max_tokens,
+            }
+            if context:
+                payload.update(context)
+            self._emit(Event(EventKind.PHASE, data=payload))
+            self.pause()
+            await self._wait_if_paused()
+            if not self._running:
+                break
+            
+        self._budget_exhausted = False
+        return False
 
     @staticmethod
     def _quality_gate_passed(quality_gate: str) -> bool:
@@ -904,7 +906,7 @@ class Orchestrator:
                 "step": step, "response": response,
                 **self._usage_event(coordinator),
             }))
-            if self._enforce_token_budget("coordinator", {"step": step, "agent": coordinator.name}):
+            if await self._enforce_token_budget("coordinator", {"step": step, "agent": coordinator.name}):
                 break
 
             parsed = self._parse_coordinator_response(response)
@@ -983,7 +985,7 @@ class Orchestrator:
                 "step": step, "response": agent_response,
                 **self._usage_event(selected_agent),
             }))
-            if self._enforce_token_budget("coordinator_agent", {"step": step, "agent": selected_agent.name}):
+            if await self._enforce_token_budget("coordinator_agent", {"step": step, "agent": selected_agent.name}):
                 break
 
 

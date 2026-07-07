@@ -808,14 +808,27 @@ VOTE: DISAGREE
                 event_cb=events.append,
             )
 
-            asyncio.run(orchestrator.run("debate product design"))
+            async def test_run():
+                task = asyncio.create_task(orchestrator.run("debate product design"))
+                
+                # Wait for budget exhaustion event
+                for _ in range(100):
+                    if any(e.kind.value == "phase" and e.data.get("status") == "budget_exhausted" for e in events):
+                        break
+                    await asyncio.sleep(0.01)
 
-            self.assertEqual(len(agent.received), 1)
-            self.assertEqual(orchestrator.run_token_total, 120)
-            self.assertTrue(any(
-                event.kind.value == "phase" and event.data.get("status") == "budget_exhausted"
-                for event in events
-            ))
+                self.assertTrue(any(
+                    event.kind.value == "phase" and event.data.get("status") == "budget_exhausted"
+                    for event in events
+                ))
+                self.assertEqual(len(agent.received), 1)
+                self.assertEqual(orchestrator.run_token_total, 120)
+                
+                # Stop the orchestrator so the task can exit
+                orchestrator.stop()
+                await task
+                
+            asyncio.run(test_run())
 
     def test_global_plus_project_configs(self):
         from fastapi.testclient import TestClient

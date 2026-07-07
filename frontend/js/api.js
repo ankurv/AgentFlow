@@ -680,3 +680,34 @@ async function deleteUser(username) {
         alert("Failed to delete user: " + (err.detail || "Unknown error"));
     }
 }
+
+async function updateTokens() {
+  const maxTokens = parseInt(document.getElementById('maxTokensInput').value, 10);
+  if (isNaN(maxTokens)) {
+    notify('Please enter a valid number for max tokens', true);
+    return;
+  }
+  
+  if (paused || appStatus === 'needs_attention') {
+    // If paused (or budget exhausted), resume with new tokens
+    await fetch('/run/resume', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ max_tokens: maxTokens })
+    });
+    paused = false;
+    document.getElementById('pauseBtn').textContent = 'Pause';
+    updateStatus('running');
+    notify(`Tokens updated to ${maxTokens.toLocaleString()} and run resumed.`);
+  } else if (appStatus === 'running') {
+    // Just update the tokens on backend if it's already running
+    await fetch('/run/resume', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ max_tokens: maxTokens })
+    });
+    notify(`Tokens updated to ${maxTokens.toLocaleString()}.`);
+  } else {
+    notify(`Next run will use ${maxTokens.toLocaleString()} tokens limit.`);
+  }
+}
