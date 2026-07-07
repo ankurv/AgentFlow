@@ -242,21 +242,8 @@
   
   .feed-detail { font-size: 12px; color: var(--text-muted); margin-top: 8px;
                  font-family: var(--mono); white-space: pre-wrap; word-break: break-all;
-                 max-height: 150px; overflow: hidden; cursor: pointer; background: rgba(0,0,0,0.2);
-                 padding: 10px; border-radius: 6px; border: 1px solid var(--border);
-                 position: relative; }
-  .feed-detail::after {
-    content: "Click to expand / collapse";
-    position: absolute;
-    bottom: 2px;
-    right: 8px;
-    font-size: 9.5px;
-    color: var(--accent2);
-    font-weight: 600;
-    opacity: 0.8;
-  }
-  .feed-detail.expanded { max-height: none; }
-  .feed-detail.expanded::after { content: "Click to collapse"; }
+                 background: rgba(0,0,0,0.2); padding: 10px; border-radius: 6px; 
+                 border: 1px solid var(--border); position: relative; }
 
   /* ── Steer bar ── */
   .steer-bar { display: flex; gap: 10px; padding: 16px 20px;
@@ -1039,9 +1026,11 @@ function appendFeed(ev) {
           </div>
           <span class="feed-ts">${ts}</span>
         </div>
-        <div class="feed-text">${escHtml(summary)}</div>
-        ${detail ? `<div class="feed-detail ${ev.data.verdict === 'PAUSE_FOR_INPUT' ? 'expanded' : ''}" style="display: ${ev.data.verdict === 'PAUSE_FOR_INPUT' ? 'block' : 'none'}; cursor: pointer;" onclick="this.style.display = this.style.display === 'none' ? 'block' : 'none'">${escHtml(detail)}</div>` : ''}
-        ${detail && ev.data.verdict !== 'PAUSE_FOR_INPUT' ? `<button class="btn btn-secondary" style="font-size: 10px; padding: 2px 6px; margin-top: 4px;" onclick="const d = this.previousElementSibling; if (d.style.display === 'none') { d.style.display = 'block'; this.innerText = 'Hide Details'; } else { d.style.display = 'none'; this.innerText = 'Show Details'; }">Show Details</button>` : ''}
+        <div class="feed-text" style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
+          <span style="flex: 1">${escHtml(summary)}</span>
+          ${detail ? `<button class="btn btn-secondary" style="padding: 2px 8px; font-size: 12px; font-weight: bold; line-height: 1; border-radius: 4px;" onclick="const d = this.parentElement.nextElementSibling; if(d.style.display === 'none'){d.style.display='block';this.innerText='-';}else{d.style.display='none';this.innerText='+';}">${ev.data.verdict === 'PAUSE_FOR_INPUT' ? '-' : '+'}</button>` : ''}
+        </div>
+        ${detail ? `<div class="feed-detail" style="display: ${ev.data.verdict === 'PAUSE_FOR_INPUT' ? 'block' : 'none'}; margin-top: 8px;">${escHtml(detail)}</div>` : ''}
       </div>
     </div>
   `;
