@@ -2,6 +2,11 @@
 // ── Auth & 401 Interceptor ──────────────────────────────────────────────────
 const originalFetch = window.fetch;
 window.fetch = async function(...args) {
+    if (args.length === 1 && typeof args[0] === 'string') {
+        args.push({ credentials: 'same-origin' });
+    } else if (args.length === 2 && typeof args[1] === 'object') {
+        args[1].credentials = args[1].credentials || 'same-origin';
+    }
     const response = await originalFetch(...args);
     if (response.status === 401 || response.status === 403) {
         document.getElementById('loginModal').style.display = 'flex';
@@ -657,7 +662,8 @@ async function addUser() {
         document.getElementById('newUserPassword').value = '';
         loadUsers();
     } else {
-        alert("Failed to add user (maybe username already exists?)");
+        const errData = await res.json().catch(()=>({}));
+        alert("Failed to add user: " + (errData.detail || "Unknown error"));
     }
 }
 
