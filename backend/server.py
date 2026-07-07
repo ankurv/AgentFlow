@@ -277,11 +277,14 @@ def save_project_brief(body: ProjectBriefIn, state: AppState = Depends(get_state
     state.workspace.write_brief(body.content)
     return {"ok": True, "brief": state.workspace.brief()}
 
+class ProjectSettingsIn(BaseModel):
+    max_tokens: int
+
 @app.put("/project/settings")
-def save_project_settings(body: dict, state: AppState = Depends(get_state)):
+def save_project_settings(body: ProjectSettingsIn, state: AppState = Depends(get_state)):
     if not state.workspace:
         raise HTTPException(400, "Open a project first")
-    state.workspace.save_settings(body)
+    state.workspace.save_settings({"max_tokens": body.max_tokens})
     return {"ok": True, "settings": state.workspace.settings()}
 
 
