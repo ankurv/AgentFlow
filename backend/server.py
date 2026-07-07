@@ -187,7 +187,7 @@ def save_global_agents(configs: list[dict]):
 
 
 
-def broadcast(event: Event):
+def broadcast(event: Event, state):
     data = event.to_dict()
     if event.kind == EventKind.ERROR and event.data.get("recoverable"):
         state.status = "needs_attention"
@@ -502,7 +502,7 @@ async def start_run(body: StartBody, state: AppState = Depends(get_state)):
     state.orchestrator = Orchestrator(
         agents=agents,
         workspace=state.workspace,
-        event_cb=broadcast,
+        event_cb=lambda e: broadcast(e, state),
         max_debate_rounds=body.max_debate_rounds,
         max_tokens=body.max_tokens,
         max_build_iterations=body.max_build_iterations,
@@ -521,12 +521,12 @@ async def start_run(body: StartBody, state: AppState = Depends(get_state)):
                         state.run_id, "done",
                         [agent.state_dict() for agent in state.orchestrator.agents],
                     )
-                broadcast(Event(kind=EventKind.DONE, data={"workspace": snapshot or {}}))
+                broadcast(Event(kind=EventKind.DONE, data={"workspace": snapshot or {}}), state)
         except asyncio.CancelledError:
             pass
         except Exception as exc:
             state.status = "error"
-            broadcast(Event(kind=EventKind.ERROR, data={"error": str(exc)}))
+            broadcast(Event(kind=EventKind.ERROR, data={"error": str(exc)}), state)
             if state.store and state.run_id:
                 state.store.finish_run(
                     state.run_id, "error",
