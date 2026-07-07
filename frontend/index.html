@@ -93,25 +93,27 @@
   <!-- ── Live Feed ── -->
   <div class="panel active" id="panel-chat">
     <div class="chat-layout">
-      <div class="chat-sidebar">
+      <!-- Sidebar is hidden per user request, agents and inline tracker removed from here -->
+      <div class="chat-sidebar" style="display:none;">
         <div class="sidebar-section" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:20px;">
-          <div style="display:flex; flex-direction:column;">
+          <div style="display:none; flex-direction:column;">
             <div class="sidebar-label">Agents</div>
             <div id="agentList"></div>
           </div>
           
-          <div id="inlineTaskTracker" style="border-top: 1px solid var(--border); padding-top: 16px; display:flex; flex-direction:column;">
-            <details>
-              <summary class="sidebar-label" style="cursor:pointer; outline:none; user-select:none; margin-bottom:0">📋 Plan Tasks</summary>
-              <div id="progressTaskList" style="margin-top:10px; overflow-y: auto;">
-                <div style="color:var(--muted);font-size:12px">No tasks defined in PLAN.md yet.</div>
-              </div>
-            </details>
-          </div>
+          <div id="inlineTaskTracker" style="display:none;"></div>
         </div>
       </div>
       <div class="feed-area">
-        <div class="feed" id="feed"></div>
+        <!-- Live feed events are hidden per user request -->
+        <div class="feed" id="feed" style="display:none;"></div>
+        <!-- Planning tasks checklist takes over the feed area -->
+        <div style="flex:1; overflow-y:auto; padding:20px; background:var(--bg); border-radius:8px; margin-bottom:10px;">
+          <h2 style="margin-top:0; color:var(--text); font-family:var(--heading-font); text-transform:uppercase; font-size:14px;">📋 Plan Tasks</h2>
+          <div id="progressTaskList" style="margin-top:10px; font-size:14px; line-height:1.6;">
+            <div style="color:var(--muted);">No tasks defined in PLAN.md yet.</div>
+          </div>
+        </div>
         <div class="steer-bar" style="display:flex; flex-direction:column; gap:10px">
           <!-- Action chips (visible when idle) -->
                     <div style="display:flex; gap:10px; width:100%">
