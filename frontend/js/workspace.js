@@ -247,7 +247,6 @@ async function refreshWorkspace() {
     `<button class="ws-file-btn" onclick="loadWsFile(decodeURIComponent('${encodeURIComponent(f)}'))">${getFileIcon(f)} ${escHtml(f)}</button>`
   ).join('');
   await loadWsFile(currentWsKey);
-  refreshPlanProgress();
 }
 
 async function loadRunHistory() {
