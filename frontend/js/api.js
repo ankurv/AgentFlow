@@ -68,10 +68,29 @@ function handleEvent(ev) {
       }
     } else {
       updateStatus('running');
+      const pendingActions = document.getElementById('contextPendingActions');
+      if (pendingActions) pendingActions.style.display = 'none';
     }
   }
   if (ev.kind === 'done')  { updateStatus('done'); loadRunHistory(); }
   if (ev.kind === 'error') updateStatus(ev.data.recoverable ? 'needs_attention' : 'error');
+
+  // Parse coordinator turn for current task
+  if (ev.kind === 'turn_end' && ev.agent === 'Coordinator') {
+     const text = ev.data.response || '';
+     const nextAgentMatch = text.match(/## NEXT_AGENT\s*\n([\s\S]*?)(?=##|$)/);
+     const instructionsMatch = text.match(/## INSTRUCTIONS\s*\n([\s\S]*?)(?=##|$)/);
+     
+     if (nextAgentMatch && instructionsMatch) {
+        const agentName = nextAgentMatch[1].trim();
+        const instructions = instructionsMatch[1].trim();
+        
+        const nameEl = document.getElementById('contextAgentName');
+        const instEl = document.getElementById('contextAgentInstructions');
+        if (nameEl) nameEl.textContent = (agentName !== 'NONE' && agentName) ? agentName : 'System';
+        if (instEl) instEl.textContent = instructions;
+     }
+  }
 
   // Render feed item
   appendFeed(ev);
@@ -500,27 +519,31 @@ async function showInteractiveQuestions() {
   try {
     const res = await fetch('/workspace/file/questions').then(r=>r.json());
     if (res && res.content && res.content.trim().length > 0) {
-      const feed = document.getElementById('feed');
-      const div = document.createElement('div');
-      div.className = `feed-item phase`;
-      div.innerHTML = `
-        <div class="feed-icon" style="background:var(--accent1); color:black">❓</div>
-        <div class="feed-content">
-          <div class="feed-header">
-            <strong>Agents are waiting for your input!</strong>
-          </div>
-          <div class="feed-body" style="background:var(--bg2); padding:16px; border-radius:8px; margin-top:8px; border:1px solid var(--border)">
-            ${marked.parse(res.content)}
-          </div>
-        </div>
-      `;
-      feed.appendChild(div);
-      feed.scrollTop = feed.scrollHeight;
+      const pendingPane = document.getElementById('contextPendingActions');
+      const bodyEl = document.getElementById('contextQuestionsBody');
+      if (pendingPane && bodyEl) {
+        pendingPane.style.display = 'flex';
+        bodyEl.innerHTML = marked.parse(res.content);
+      }
     }
   } catch (err) {
     console.error("Failed to load interactive questions", err);
   }
 }
+
+window.submitContextAnswer = function() {
+  const answer = document.getElementById('contextAnswerInput').value;
+  if (!answer.trim()) return;
+  
+  const steerInput = document.getElementById('steerInput');
+  if (steerInput) {
+     steerInput.value = answer;
+     if (window.sendSteer) window.sendSteer();
+  }
+  
+  document.getElementById('contextPendingActions').style.display = 'none';
+  document.getElementById('contextAnswerInput').value = '';
+};
 
 async function exportContext() {
   try {
