@@ -28,6 +28,18 @@
   body { background: var(--bg); color: var(--text); font-family: var(--font);
          font-size: 14px; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
 
+  /* ── Intro Banner ── */
+  .intro-banner {
+    display: flex; align-items: center; justify-content: space-between;
+    background: linear-gradient(90deg, rgba(99,102,241,0.15) 0%, rgba(99,102,241,0.05) 100%);
+    border-bottom: 1px solid rgba(99,102,241,0.2);
+    padding: 10px 24px; color: var(--accent2); font-size: 13.5px;
+  }
+  .banner-content { display: flex; align-items: center; gap: 10px; }
+  .banner-content strong { color: #fff; }
+  .banner-close { background: transparent; border: none; color: var(--muted); cursor: pointer; font-size: 18px; padding: 0 4px; transition: color 0.2s; }
+  .banner-close:hover { color: #fff; }
+
   /* ── Header ── */
   header { display: flex; align-items: center; gap: 12px; padding: 0 24px;
            height: 60px; border-bottom: 1px solid var(--border); flex-shrink: 0;
