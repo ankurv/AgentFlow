@@ -114,6 +114,37 @@ async function saveFileEdit(filename) {
   }
 }
 
+async function createNewFile() {
+  if (!projectOpen) {
+    notify('Open a project first', true);
+    return;
+  }
+  const filename = prompt('Enter new file path (e.g. src/utils.py):');
+  if (!filename || !filename.trim()) return;
+  
+  const encodedName = filename.trim().split('/').map(encodeURIComponent).join('/');
+  try {
+    const res = await fetch(`/workspace/src/${encodedName}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: '' })
+    });
+    
+    if (res.ok) {
+      notify('File created successfully!');
+      await refreshWorkspace();
+      await loadWsFile(filename.trim());
+      startFileEdit(filename.trim());
+    } else {
+      const err = await res.json();
+      alert('Failed to create file: ' + (err.detail || JSON.stringify(err)));
+    }
+  } catch (err) {
+    console.error(err);
+    alert('Failed to create file: ' + err.message);
+  }
+}
+
 async function loadWsFile(key) {
   currentWsKey = key;
   document.querySelectorAll('.ws-file-btn').forEach(b => b.classList.remove('active'));
@@ -133,35 +164,49 @@ async function loadWsFile(key) {
     try {
       const designRes = await fetch('/workspace/file/design').then(r=>r.json());
       const planRes = await fetch('/workspace/file/plan').then(r=>r.json());
-      
-      const designViewer = document.getElementById('designDocViewer');
-      const planViewer = document.getElementById('planDocViewer');
-      
-      if (designViewer) designViewer.textContent = designRes.content || 'No design details written in DESIGN.md yet.';
-      if (planViewer) planViewer.textContent = planRes.content || 'No plan details written in PLAN.md yet.';
 
-      // Parse and Render Mermaid Diagram if present in DESIGN.md
-      const mermaidTarget = document.getElementById('mermaidTarget');
+      // Parse and Render Mermaid Diagram(s) if present in DESIGN.md
       const mapContainer = document.getElementById('mermaidMapContainer');
+      const diagramsContainer = document.getElementById('mermaidDiagramsContainer');
       const designContent = designRes.content || '';
-      const mermaidMatch = designContent.match(/```mermaid([\s\S]*?)```/);
-      if (mermaidMatch && mermaidTarget && mapContainer) {
-        const rawGraph = mermaidMatch[1].trim();
-        lastMermaidCode = rawGraph;
-        mermaidTarget.removeAttribute('data-processed');
-        mermaidTarget.textContent = rawGraph;
+      
+      const mermaidMatches = [...designContent.matchAll(/```mermaid\n([\s\S]*?)```/g)];
+      
+      if (mermaidMatches.length > 0 && diagramsContainer && mapContainer) {
+        diagramsContainer.innerHTML = '';
         mapContainer.style.display = 'flex';
-        if (window.mermaid) {
-          try {
-            mermaid.run({ nodes: [mermaidTarget] });
-          } catch (mErr) {
-            console.error("Failed to render Mermaid graph", mErr);
-            mermaidTarget.innerHTML = `<div style="color:var(--red);font-size:12px;font-family:var(--font)">Diagram parse error: ${escHtml(mErr.message)}</div>`;
+        
+        mermaidMatches.forEach((match, idx) => {
+          const rawGraph = match[1].trim();
+          
+          const wrapper = document.createElement('div');
+          wrapper.style.cssText = 'display:flex; flex-direction:column; background:#090c12; padding:16px; border-radius:6px; overflow:auto; position:relative';
+          
+          const btnGroup = document.createElement('div');
+          btnGroup.style.cssText = 'position:absolute; top:8px; right:8px; display:flex; gap:8px; z-index:10';
+          btnGroup.innerHTML = `<button class="btn btn-secondary" onclick="navigator.clipboard.writeText(\`${rawGraph.replace(/`/g, '\\`').replace(/\$/g, '$$$$')}\`); notify('Copied diagram source code!')" style="padding: 4px 10px; font-size: 11px">Copy Code</button>`;
+          wrapper.appendChild(btnGroup);
+          
+          const target = document.createElement('div');
+          target.className = 'mermaid';
+          target.style.cssText = 'display:flex; justify-content:center; align-items:center; width:100%';
+          target.textContent = rawGraph;
+          
+          wrapper.appendChild(target);
+          diagramsContainer.appendChild(wrapper);
+          
+          if (window.mermaid) {
+            try {
+              mermaid.run({ nodes: [target] });
+            } catch (mErr) {
+              console.error("Failed to render Mermaid graph", mErr);
+              target.innerHTML = `<div style="color:var(--red);font-size:12px;font-family:var(--font)">Diagram parse error: ${escHtml(mErr.message)}</div>`;
+            }
           }
-        }
+        });
       } else if (mapContainer) {
         mapContainer.style.display = 'none';
-        if (mermaidTarget) mermaidTarget.innerHTML = '';
+        if (diagramsContainer) diagramsContainer.innerHTML = '';
       }
     } catch (err) {
       console.error("Failed to load dashboard files", err);
@@ -172,7 +217,7 @@ async function loadWsFile(key) {
 
     let content = '';
     try {
-      if (['design','plan','consensus','tests','questions'].includes(key)) {
+      if (['design','plan','consensus','tests','questions','logbook'].includes(key)) {
         const res = await fetch(`/workspace/file/${key}`).then(r=>r.json());
         content = res.content;
       } else {

@@ -433,3 +433,87 @@ function addNewAgentCard() {
   renderAgentCards();
 }
 
+// ── MCP Config ──────────────────────────────────────────────────────────────
+
+let mcpServers = [];
+
+async function loadMCPServers() {
+  if (!projectOpen) {
+    document.getElementById('mcpConfigSection').style.display = 'none';
+    return;
+  }
+  document.getElementById('mcpConfigSection').style.display = 'block';
+  const res = await fetch('/mcp').then(r => r.json());
+  mcpServers = res.servers || [];
+  renderMCPServers();
+}
+
+function renderMCPServers() {
+  const container = document.getElementById('mcpList');
+  if (!container) return;
+  if (!mcpServers.length) {
+    container.innerHTML = '<div style="color:var(--muted);font-size:12.5px;font-style:italic">No MCP servers configured for this project.</div>';
+    return;
+  }
+  container.innerHTML = mcpServers.map(s => `
+    <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:6px; padding:12px; display:flex; justify-content:space-between; align-items:center;">
+      <div>
+        <div style="font-weight:600; font-size:14px">${escHtml(s.name)}</div>
+        <div style="font-family:var(--mono); font-size:11px; color:var(--muted); margin-top:4px;">
+          ${escHtml(s.command)} ${escHtml((s.args||[]).join(' '))}
+        </div>
+      </div>
+      <button class="btn btn-danger" onclick="deleteMCPServer('${s.id}')" style="padding:6px 12px; font-size:12px">Delete</button>
+    </div>
+  `).join('');
+}
+
+async function addMCPServer() {
+  const name = document.getElementById('mcpName').value.trim();
+  const command = document.getElementById('mcpCommand').value.trim();
+  const argsRaw = document.getElementById('mcpArgs').value.trim();
+  const envRaw = document.getElementById('mcpEnv').value.trim();
+  
+  if (!name || !command) {
+    notify('Name and command are required.', true);
+    return;
+  }
+  
+  const args = argsRaw ? argsRaw.split(',').map(a => a.trim()) : [];
+  const env = {};
+  if (envRaw) {
+    envRaw.split(',').forEach(pair => {
+      const [k, v] = pair.split('=');
+      if (k && v) env[k.trim()] = v.trim();
+    });
+  }
+  
+  const res = await fetch('/mcp', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, command, args, env })
+  });
+  
+  if (res.ok) {
+    document.getElementById('mcpName').value = '';
+    document.getElementById('mcpCommand').value = '';
+    document.getElementById('mcpArgs').value = '';
+    document.getElementById('mcpEnv').value = '';
+    notify('MCP server added');
+    loadMCPServers();
+  } else {
+    notify('Failed to add MCP server', true);
+  }
+}
+
+async function deleteMCPServer(id) {
+  if (!confirm('Delete this MCP server?')) return;
+  const res = await fetch('/mcp/' + id, { method: 'DELETE' });
+  if (res.ok) {
+    notify('MCP server deleted');
+    loadMCPServers();
+  } else {
+    notify('Failed to delete MCP server', true);
+  }
+}
+

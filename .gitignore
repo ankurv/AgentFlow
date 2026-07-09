@@ -31,3 +31,15 @@ Thumbs.db
 # Environment variables and credentials
 .env
 .env.*
+
+# AgentFlow Data
+.agentflow/
+*.db
+*.db-shm
+*.db-wal
+backend.log
+test_ui_proj/
+debug_run.py
+test_mcp_server.py
+test_shutdown.py
+test_global_agents.json

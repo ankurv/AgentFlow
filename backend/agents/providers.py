@@ -43,29 +43,85 @@ class ClaudeAgent(AgentBase):
         if config.api_key != previous_key:
             self._configure_client()
 
-    def _raw_send(self, messages: list[dict], system: str) -> tuple[str, Usage]:
-        # Claude's Messages API is stateless, so AgentBase supplies a bounded
-        # history. Cache the stable system prefix when one is present.
+    def _raw_send(self, messages: list[dict], system: str, mcp_tools: list[dict] = None, tool_handler: Callable = None) -> tuple[str, Usage]:
+        from typing import Callable
         system_value = (
             [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
             if system else ""
         )
-        response = self._client.messages.create(
-            model=self.config.model or "claude-sonnet-4-6",
-            max_tokens=self.config.extra.get("max_tokens", 2000),
-            system=system_value,
-            messages=messages,
-        )
-        text = response.content[0].text
-        raw = response.usage
-        cached = int(getattr(raw, "cache_read_input_tokens", 0) or 0)
-        cache_write = int(getattr(raw, "cache_creation_input_tokens", 0) or 0)
-        usage = Usage(
-            input_tokens=int(getattr(raw, "input_tokens", 0) or 0) + cached + cache_write,
-            cached_input_tokens=cached,
-            output_tokens=int(getattr(raw, "output_tokens", 0) or 0),
-        )
-        return text, usage
+        
+        current_messages = list(messages)
+        total_input = 0
+        total_cached = 0
+        total_output = 0
+        
+        claude_tools = []
+        if mcp_tools:
+            for t in mcp_tools:
+                claude_tools.append({
+                    "name": t["name"],
+                    "description": t["description"],
+                    "input_schema": t["inputSchema"],
+                })
+
+        while True:
+            kwargs = {
+                "model": self.config.model or "claude-sonnet-4-6",
+                "max_tokens": self.config.extra.get("max_tokens", 2000),
+                "system": system_value,
+                "messages": current_messages,
+            }
+            if claude_tools:
+                kwargs["tools"] = claude_tools
+
+            response = self._client.messages.create(**kwargs)
+            
+            raw = response.usage
+            cached = int(getattr(raw, "cache_read_input_tokens", 0) or 0)
+            cache_write = int(getattr(raw, "cache_creation_input_tokens", 0) or 0)
+            total_input += int(getattr(raw, "input_tokens", 0) or 0) + cached + cache_write
+            total_cached += cached
+            total_output += int(getattr(raw, "output_tokens", 0) or 0)
+            
+            if response.stop_reason == "tool_use":
+                assistant_message = {"role": "assistant", "content": []}
+                tool_results = []
+                
+                for block in response.content:
+                    if block.type == "text":
+                        assistant_message["content"].append({"type": "text", "text": block.text})
+                    elif block.type == "tool_use":
+                        assistant_message["content"].append({
+                            "type": "tool_use",
+                            "id": block.id,
+                            "name": block.name,
+                            "input": block.input
+                        })
+                        try:
+                            if not tool_handler:
+                                raise RuntimeError("No tool_handler provided")
+                            res_text = tool_handler(block.name, block.input)
+                            is_error = False
+                        except Exception as e:
+                            res_text = str(e)
+                            is_error = True
+                            
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": res_text,
+                            "is_error": is_error
+                        })
+                current_messages.append(assistant_message)
+                current_messages.append({"role": "user", "content": tool_results})
+            else:
+                text_content = [b.text for b in response.content if b.type == "text"]
+                usage = Usage(
+                    input_tokens=total_input,
+                    cached_input_tokens=total_cached,
+                    output_tokens=total_output,
+                )
+                return "\n".join(text_content), usage
 
 
 class OpenAIAgent(AgentBase):
@@ -98,7 +154,8 @@ class OpenAIAgent(AgentBase):
         if config.api_key != previous_key:
             self._configure_client()
 
-    def _raw_send(self, messages: list[dict], system: str) -> tuple[str, Usage]:
+    def _raw_send(self, messages: list[dict], system: str, mcp_tools: list[dict] = None, tool_handler: Callable = None) -> tuple[str, Usage]:
+        from typing import Callable
         kwargs = {
             "model": self.config.model or "gpt-4o",
             "input": messages[-1]["content"],
@@ -161,7 +218,7 @@ class GeminiAgent(AgentBase):
             self._model_name = config.model or "gemini-2.5-flash"
             self._chat = None
 
-    def _raw_send(self, messages: list[dict], system: str) -> tuple[str, Usage]:
+    def _raw_send(self, messages: list[dict], system: str, *args, **kwargs) -> tuple[str, Usage]:
         if self._chat is None:
             model = self._genai.GenerativeModel(
                 self._model_name,
@@ -254,7 +311,7 @@ class CLIAgent(AgentBase):
             ) = previous
             raise
 
-    def _raw_send(self, messages: list[dict], system: str) -> tuple[str, Usage]:
+    def _raw_send(self, messages: list[dict], system: str, *args, **kwargs) -> tuple[str, Usage]:
         if self._session_mode == "invalid" or not getattr(self, "_argv", None):
             raise RuntimeError(f"Agent '{self.name}' has no CLI command configured. Please add one in Settings.")
         if self._session_mode == "codex":
@@ -422,7 +479,7 @@ class OllamaAgent(AgentBase):
         super().reconfigure(config)
         self._base_url = config.extra.get("base_url", "http://localhost:11434")
 
-    def _raw_send(self, messages: list[dict], system: str) -> tuple[str, Usage]:
+    def _raw_send(self, messages: list[dict], system: str, *args, **kwargs) -> tuple[str, Usage]:
         import urllib.request
 
         payload = {

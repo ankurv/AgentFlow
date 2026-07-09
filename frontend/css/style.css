@@ -566,7 +566,7 @@
   padding: 0;
 }
 .mermaid {
-  background: rgba(255,255,255,0.9);
+  background: transparent;
   padding: 16px;
   border-radius: 8px;
   margin: 12px 0;

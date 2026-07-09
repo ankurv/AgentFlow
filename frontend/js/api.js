@@ -126,6 +126,12 @@ function appendFeed(ev) {
     case 'file_write':
       summary = `Wrote ${ev.data.file}`;
       detail = ev.data.preview || '';
+      if (ev.data.file === 'DESIGN.md') {
+        const dashboardBtn = document.getElementById('wsbtn-dashboard');
+        if (dashboardBtn && dashboardBtn.classList.contains('active')) {
+          loadWsFile('dashboard');
+        }
+      }
       break;
     case 'steer':
       summary = `Steering injected: "${ev.data.message}"`;
@@ -334,18 +340,19 @@ async function stopRun() {
 
 async function steer() {
   const msg = document.getElementById('steerInput').value.trim();
-  if (!msg) return;
 
   if (appStatus === 'idle' || appStatus === 'done' || appStatus === 'error') {
     document.getElementById('steerInput').value = '';
     await startRun(msg);
   } else {
-    await fetch('/run/steer', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({message: msg})
-    });
+    if (msg) {
+      await fetch('/run/steer', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({message: msg})
+      });
+    }
     document.getElementById('steerInput').value = '';
-    if (appStatus === 'paused') {
+    if (appStatus === 'paused' || appStatus === 'waiting_for_continuation') {
       await fetch('/run/resume', {method:'POST'});
       paused = false;
       updateStatus('running');
@@ -381,11 +388,17 @@ function updateStatus(s) {
   }
 
   const steerInput = document.getElementById('steerInput');
+  const sendBtn = document.getElementById('sendBtn');
   if (steerInput) {
     if (s === 'idle' || s === 'done' || s === 'error') {
       steerInput.placeholder = 'Type a prompt/task here and press Enter to start the run…';
+      if (sendBtn) sendBtn.textContent = 'Start Run';
+    } else if (s === 'paused' || s === 'waiting_for_continuation') {
+      steerInput.placeholder = 'Optional steering message... or just press Enter to Resume';
+      if (sendBtn) sendBtn.textContent = 'Resume Run';
     } else {
       steerInput.placeholder = 'Steer agents — inject a message into the active run…';
+      if (sendBtn) sendBtn.textContent = 'Steer';
     }
   }
 
@@ -416,7 +429,9 @@ async function runChipPrompt(prompt) {
 
 async function fetchAgentStatus() {
   const res = await fetch('/run/status').then(r=>r.json());
-  if (res.status === 'needs_attention' && appStatus !== 'needs_attention') updateStatus('needs_attention');
+  if (res.status && res.status !== appStatus) {
+    updateStatus(res.status);
+  }
   let visibleAgents = res.agents || [];
   if (!visibleAgents.length) {
     const configured = await fetch('/agents').then(r=>r.json());
@@ -689,6 +704,18 @@ async function updateTokens() {
     return;
   }
   
+  if (projectOpen && currentProjectPath) {
+    try {
+      await fetch('/project/settings', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ max_tokens: maxTokens })
+      });
+    } catch (err) {
+      console.error('Failed to save project settings', err);
+    }
+  }
+  
   if (paused || appStatus === 'needs_attention') {
     // If paused (or budget exhausted), resume with new tokens
     await fetch('/run/resume', {
@@ -709,7 +736,7 @@ async function updateTokens() {
     });
     notify(`Tokens updated to ${maxTokens.toLocaleString()}.`);
   } else {
-    notify(`Next run will use ${maxTokens.toLocaleString()} tokens limit.`);
+    notify(`Next run will use ${maxTokens.toLocaleString()} tokens limit. (Saved to settings)`);
   }
 }
 

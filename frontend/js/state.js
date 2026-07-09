@@ -1,5 +1,6 @@
 // ── State ───────────────────────────────────────────────────────────────────
-let appStatus = 'idle';
+const agentColors = {};
+let appStatus = null;
 let totalTokens = 0;
 let totalCost = 0;
 let eventCount = 0;
@@ -188,6 +189,7 @@ async function openProject() {
   if (data.settings && data.settings.max_tokens) {
     const el = document.getElementById('maxTokensInput');
     if (el) el.value = data.settings.max_tokens;
+    maxTokens = data.settings.max_tokens;
   }
   document.getElementById('projectState').textContent = 'Ready · project state loaded';
   document.getElementById('projectState').className = 'project-state ready';
@@ -208,6 +210,7 @@ async function loadCurrentProject() {
   if (data.settings && data.settings.max_tokens) {
     const el = document.getElementById('maxTokensInput');
     if (el) el.value = data.settings.max_tokens;
+    maxTokens = data.settings.max_tokens;
   }
   document.getElementById('projectState').textContent = 'Ready · project state loaded';
   document.getElementById('projectState').className = 'project-state ready';

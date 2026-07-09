@@ -199,6 +199,11 @@ def broadcast(event: Event, state):
     state.event_log.append(data)
     if state.store:
         state.store.append_event(state.run_id, data)
+        if event.kind == EventKind.TURN_END and state.orchestrator:
+            state.store.update_run_metrics(
+                state.run_id,
+                [agent.state_dict() for agent in state.orchestrator.agents]
+            )
     dead = []
     for queue in state.sse_clients:
         try:
@@ -645,6 +650,33 @@ def recent_runs(state: AppState = Depends(get_state)):
 def run_turns(run_id: str, state: AppState = Depends(get_state)):
     return {"turns": state.store.run_turns(run_id) if state.store else []}
 
+class MCPServerIn(BaseModel):
+    name: str
+    command: str
+    args: list[str] = []
+    env: dict = {}
+
+@app.get("/mcp")
+def get_mcp_servers(state: AppState = Depends(get_state)):
+    if not state.store:
+        return {"servers": []}
+    return {"servers": state.store.get_mcp_servers()}
+
+@app.post("/mcp")
+def add_mcp_server(body: MCPServerIn, state: AppState = Depends(get_state)):
+    if not state.store:
+        raise HTTPException(400, "No active workspace")
+    server_id = hashlib.md5(f"{body.name}{datetime.now().isoformat()}".encode()).hexdigest()[:8]
+    state.store.add_mcp_server(server_id, body.name, body.command, body.args, body.env)
+    return {"ok": True, "id": server_id}
+
+@app.delete("/mcp/{server_id}")
+def delete_mcp_server(server_id: str, state: AppState = Depends(get_state)):
+    if not state.store:
+        raise HTTPException(400, "No active workspace")
+    state.store.delete_mcp_server(server_id)
+    return {"ok": True}
+
 
 @app.get("/workspace")
 def get_workspace(state: AppState = Depends(get_state)):
@@ -657,7 +689,7 @@ def get_workspace(state: AppState = Depends(get_state)):
 def get_file(key: str, state: AppState = Depends(get_state)):
     if not state.workspace:
         raise HTTPException(404, "No active workspace")
-    allowed = ["design", "plan", "consensus", "tests", "questions"]
+    allowed = ["design", "plan", "consensus", "tests", "questions", "logbook"]
     if key not in allowed:
         raise HTTPException(400, f"key must be one of {allowed}")
     return {"key": key, "content": state.workspace.read(key)}

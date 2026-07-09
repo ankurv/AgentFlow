@@ -51,6 +51,7 @@
   <div class="tab active" onclick="showTab('chat',this)">Live Feed</div>
   <div class="tab" onclick="showTab('workspace',this)">Project Files</div>
     <div class="tab" onclick="showTab('config',this)">Agents</div>
+  <div class="tab" onclick="showTab('mcp',this)">MCP Servers</div>
   <div class="tab" onclick="showTab('settings',this)">Settings</div>
   <div class="tab" onclick="showTab('history',this)">Run History</div>
 </nav>
@@ -144,35 +145,21 @@
         <button class="ws-file-btn" onclick="loadWsFile('consensus')" id="wsbtn-consensus">🤝 CONSENSUS.md</button>
         <button class="ws-file-btn" onclick="loadWsFile('questions')" id="wsbtn-questions">❓ QUESTIONS.md</button>
         <button class="ws-file-btn" onclick="loadWsFile('tests')" id="wsbtn-tests">🧪 TEST_RESULTS.md</button>
-        <div style="margin:16px 0 8px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Project files</div>
+        <button class="ws-file-btn" onclick="loadWsFile('logbook')" id="wsbtn-logbook">📖 LOGBOOK.md</button>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin:16px 0 8px">
+          <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Project files</div>
+          <button class="btn btn-secondary" onclick="createNewFile()" style="padding:2px 6px; font-size:10px">+ New File</button>
+        </div>
         <div id="srcFileList" style="display:flex;flex-direction:column;gap:3px"></div>
       </div>
       <div class="ws-content">
         <button class="btn btn-secondary ws-refresh" onclick="refreshWorkspace()">↻ Refresh</button>
         
-        <!-- Collapsible Dashboard Container -->
         <div id="dashboardView" style="margin-top: 12px; display:flex; flex-direction:column; gap:16px; flex:1; overflow-y:auto; padding-right:8px">
           <!-- Mermaid visual map container -->
-          <div id="mermaidMapContainer" style="background:rgba(255,255,255,0.02); border:1px solid var(--border); border-radius:var(--radius); padding:20px; display:none; flex-direction:column; flex-shrink:0">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; width:100%">
-              <h4 style="font-family:var(--heading-font); margin:0; font-size:13px; text-transform:uppercase; color:var(--text-muted)">📐 Visual Architecture Connections</h4>
-              <div style="display:flex; gap:8px">
-                <button class="btn btn-secondary" onclick="copyMermaidCode()" style="padding: 4px 10px; font-size: 11px">Copy Code</button>
-                <button class="btn btn-secondary" onclick="copyMermaidSVG()" style="padding: 4px 10px; font-size: 11px">Copy SVG</button>
-              </div>
-            </div>
-            <div id="mermaidTarget" class="mermaid" style="display:flex; justify-content:center; background:#090c12; padding:16px; border-radius:6px; overflow:auto"></div>
-          </div>
-          <!-- Side-by-side files split -->
-          <div style="display:flex; gap:16px; flex:1; min-height:400px; overflow:hidden">
-            <div style="flex:1; display:flex; flex-direction:column; overflow:hidden">
-              <h4 style="font-family:var(--heading-font); margin-bottom:8px; font-size:12.5px; text-transform:uppercase; color:var(--text-muted)">🎨 DESIGN.md</h4>
-              <div id="designDocViewer" style="background:#090c12; border:1px solid var(--border); border-radius:var(--radius); padding:16px; font-family:var(--mono); font-size:12.5px; line-height:1.6; overflow-y:auto; flex:1">Loading design...</div>
-            </div>
-            <div style="flex:1; display:flex; flex-direction:column; overflow:hidden">
-              <h4 style="font-family:var(--heading-font); margin-bottom:8px; font-size:12.5px; text-transform:uppercase; color:var(--text-muted)">📋 PLAN.md</h4>
-              <div id="planDocViewer" style="background:#090c12; border:1px solid var(--border); border-radius:var(--radius); padding:16px; font-family:var(--mono); font-size:12.5px; line-height:1.6; overflow-y:auto; flex:1">Loading plan...</div>
-            </div>
+          <div id="mermaidMapContainer" style="background:rgba(255,255,255,0.02); border:1px solid var(--border); border-radius:var(--radius); padding:20px; display:none; flex-direction:column; flex:1">
+            <h4 style="font-family:var(--heading-font); margin:0 0 16px 0; font-size:13px; text-transform:uppercase; color:var(--text-muted)">📐 Visual Architecture & Flow Diagrams</h4>
+            <div id="mermaidDiagramsContainer" style="display:flex; flex-direction:column; gap:24px; flex:1"></div>
           </div>
         </div>
 
@@ -201,6 +188,26 @@
       </div>
 
       <div class="agent-cards" id="agentCardsContainer"></div>
+
+    </div>
+  </div>
+
+  <div class="panel" id="panel-mcp">
+    <div class="config-layout">
+      <!-- MCP Servers -->
+      <div id="mcpConfigSection">
+        <h2>MCP Servers (Local Tools)</h2>
+        <p class="muted-note" style="margin-bottom:16px;">Configure Model Context Protocol (MCP) servers to give agents access to external tools. Servers configured here will be available to Claude agents in this project.</p>
+        <div id="mcpList" style="display:flex; flex-direction:column; gap:12px; margin-bottom:16px;"></div>
+        <div style="display:flex; flex-direction:column; gap:8px; background:var(--bg2); padding:16px; border-radius:var(--radius); border:1px solid var(--border)">
+          <div style="font-size:13px; font-weight:600;">Add New MCP Server</div>
+          <input type="text" id="mcpName" placeholder="Name (e.g. filesystem)" class="input-modern" style="width:100%">
+          <input type="text" id="mcpCommand" placeholder="Command or SSE URL (e.g. npx or http://localhost:8000/sse)" class="input-modern" style="width:100%">
+          <input type="text" id="mcpArgs" placeholder="Arguments (comma separated, e.g. -y,@modelcontextprotocol/server-filesystem,/Users)" class="input-modern" style="width:100%">
+          <input type="text" id="mcpEnv" placeholder="Env Vars (key=value,key2=value2)" class="input-modern" style="width:100%">
+          <button class="btn btn-primary" style="align-self:flex-start;" onclick="addMCPServer()">Add Server</button>
+        </div>
+      </div>
     </div>
   </div>
 

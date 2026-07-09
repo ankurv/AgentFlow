@@ -104,13 +104,14 @@ class Workspace:
         )
         self._file("consensus").write_text("# Consensus Log\n")
         self._file("tests").write_text("# Test Results\n")
+        self._file("logbook").write_text("# Workflow Log Book\n")
         self._checksums.clear()
 
     def _file(self, key: str) -> Path:
         names = {
             "design": "DESIGN.md", "plan": "PLAN.md",
             "consensus": "CONSENSUS.md", "tests": "TEST_RESULTS.md",
-            "questions": "QUESTIONS.md"
+            "questions": "QUESTIONS.md", "logbook": "LOGBOOK.md"
         }
         return self.root / names[key]
 

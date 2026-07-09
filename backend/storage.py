@@ -66,6 +66,13 @@ class ProjectStore:
                     PRIMARY KEY (run_id, turn_id)
                 );
                 CREATE INDEX IF NOT EXISTS idx_turns_run ON turns(run_id, turn_id);
+                CREATE TABLE IF NOT EXISTS mcp_servers (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    command TEXT NOT NULL,
+                    args_json TEXT NOT NULL DEFAULT '[]',
+                    env_json TEXT NOT NULL DEFAULT '{}'
+                );
                 """
             )
 
@@ -113,6 +120,17 @@ class ProjectStore:
                    SET status=?, completed_at=?, total_tokens=?, estimated_cost_usd=?
                    WHERE run_id=?""",
                 (status, now, tokens, cost, run_id),
+            )
+
+    def update_run_metrics(self, run_id: str, agents: list[dict]):
+        tokens = sum(int(agent.get("total_tokens", 0) or 0) for agent in agents)
+        cost = sum(float(agent.get("cost_usd", 0) or 0) for agent in agents)
+        with self._lock, self._db:
+            self._db.execute(
+                """UPDATE runs
+                   SET total_tokens=?, estimated_cost_usd=?
+                   WHERE run_id=?""",
+                (tokens, cost, run_id),
             )
 
     def append_event(self, run_id: str | None, event: dict):
@@ -201,6 +219,29 @@ class ProjectStore:
                 (limit,),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def get_mcp_servers(self) -> list[dict]:
+        with self._lock:
+            rows = self._db.execute("SELECT * FROM mcp_servers ORDER BY name").fetchall()
+        result = []
+        for row in rows:
+            item = dict(row)
+            item["args"] = json.loads(item.pop("args_json"))
+            item["env"] = json.loads(item.pop("env_json"))
+            result.append(item)
+        return result
+
+    def add_mcp_server(self, server_id: str, name: str, command: str, args: list[str], env: dict):
+        with self._lock, self._db:
+            self._db.execute(
+                """INSERT OR REPLACE INTO mcp_servers (id, name, command, args_json, env_json)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (server_id, name, command, json.dumps(args), json.dumps(env))
+            )
+
+    def delete_mcp_server(self, server_id: str):
+        with self._lock, self._db:
+            self._db.execute("DELETE FROM mcp_servers WHERE id=?", (server_id,))
 
     def close(self):
         with self._lock:

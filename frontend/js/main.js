@@ -6,6 +6,7 @@ function showTab(id, tabElement) {
   if (tabElement) tabElement.classList.add('active');
   if (id === 'workspace') refreshWorkspace();
   if (id === 'config') loadAgentConfig();
+  if (id === 'mcp') loadMCPServers();
   if (id === 'history') loadRunHistory();
   if (id === 'chat') fetchAgentStatus();
 }
@@ -17,5 +18,6 @@ if (window.mermaid) {
 connectSSE();
 loadCurrentProject();
 loadAgentConfig();
+loadMCPServers();
 fetchAgentStatus();
 setInterval(fetchAgentStatus, 4000);

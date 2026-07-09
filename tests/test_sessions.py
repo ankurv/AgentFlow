@@ -24,7 +24,7 @@ class StatefulFake(AgentBase):
         self.received_systems = []
         self.replies = iter(replies or ["ok"])
 
-    def _raw_send(self, messages, system):
+    def _raw_send(self, messages, system, *args, **kwargs):
         self.received.append(messages)
         self.received_systems.append(system)
         return next(self.replies), Usage(
@@ -57,11 +57,11 @@ class RateLimitedFake(StatefulFake):
         super().__init__(config, replies=[reply])
         self.attempts = 0
 
-    def _raw_send(self, messages, system):
+    def _raw_send(self, messages, system, *args, **kwargs):
         self.attempts += 1
         if self.attempts == 1:
             raise RuntimeError("429 usage limit reached; retry after 1 second")
-        return super()._raw_send(messages, system)
+        return super()._raw_send(messages, system, *args, **kwargs)
 
 
 class ImmediateRetryOrchestrator(Orchestrator):
@@ -71,7 +71,7 @@ class ImmediateRetryOrchestrator(Orchestrator):
 
 
 class RepairableFake(StatefulFake):
-    def _raw_send(self, messages, system):
+    def _raw_send(self, messages, system, *args, **kwargs):
         if self.config.model != "fixed":
             raise RuntimeError("invalid model configuration")
         return super()._raw_send(messages, system)
@@ -958,6 +958,121 @@ VOTE: DISAGREE
             self.assertEqual(res.status_code, 200)
             self.assertEqual(res.json(), {"ok": False, "error": "API Key Expired"})
 
+    def test_project_settings_persistence(self):
+        from fastapi.testclient import TestClient
+        import backend.server
+        client = TestClient(backend.server.app)
+        res = client.post("/auth/login", json={"username": "admin", "password": "admin123"})
+        self.assertEqual(res.status_code, 200)
+
+        with tempfile.TemporaryDirectory() as td:
+            res = client.post("/project/open", json={"path": td})
+            self.assertEqual(res.status_code, 200)
+            
+            # Save settings
+            res = client.put("/project/settings", json={"max_tokens": 123456})
+            self.assertEqual(res.status_code, 200)
+            self.assertEqual(res.json()["settings"]["max_tokens"], 123456)
+            
+            # Ensure it persists by re-opening the project
+            res = client.post("/project/open", json={"path": td})
+            self.assertEqual(res.status_code, 200)
+            self.assertEqual(res.json()["settings"]["max_tokens"], 123456)
+            
+    def test_workspace_create_file(self):
+        from fastapi.testclient import TestClient
+        import backend.server
+        client = TestClient(backend.server.app)
+        res = client.post("/auth/login", json={"username": "admin", "password": "admin123"})
+        self.assertEqual(res.status_code, 200)
+
+        with tempfile.TemporaryDirectory() as td:
+            res = client.post("/project/open", json={"path": td})
+            self.assertEqual(res.status_code, 200)
+            
+            # Create a file via POST empty content
+            res = client.post("/workspace/src/new_test_file.txt", json={"content": ""})
+            self.assertEqual(res.status_code, 200)
+            
+            # Read the file via GET
+            res = client.get("/workspace/src/new_test_file.txt")
+            self.assertEqual(res.status_code, 200)
+            self.assertEqual(res.json()["content"], "")
+            
+            # Write some content
+            res = client.post("/workspace/src/new_test_file.txt", json={"content": "hello world"})
+            self.assertEqual(res.status_code, 200)
+            
+            # Read the file again
+            res = client.get("/workspace/src/new_test_file.txt")
+            self.assertEqual(res.status_code, 200)
+            self.assertEqual(res.json()["content"], "hello world")
+            
+    def test_global_agent_inheritance_exclusive(self):
+        from fastapi.testclient import TestClient
+        import backend.server
+        client = TestClient(backend.server.app)
+        res = client.post("/auth/login", json={"username": "admin", "password": "admin123"})
+        self.assertEqual(res.status_code, 200)
+
+        with tempfile.TemporaryDirectory() as td:
+            td_path = Path(td)
+            global_agents_file = td_path / "global_agents.json"
+            global_agents = [{
+                "id": "global_1",
+                "name": "GlobalAgent",
+                "kind": "openai",
+                "role": "GlobalRole",
+                "model": "gpt-4",
+                "api_key": backend.crypto.encrypt_key("global_secret"),
+                "base_url": "",
+                "cli_command": "",
+                "system_prompt": "global system",
+                "max_history_turns": 20,
+                "extra": {}
+            }]
+            global_agents_file.write_text(json.dumps(global_agents))
+
+            orig_path = backend.server.GLOBAL_AGENTS_PATH
+            backend.server.GLOBAL_AGENTS_PATH = global_agents_file
+
+            try:
+                # Open empty project
+                res = client.post("/project/open", json={"path": str(td_path / "project")})
+                self.assertEqual(res.status_code, 200)
+
+                # Fetch agents. Should inherit global agent
+                res = client.get("/agents")
+                self.assertEqual(res.status_code, 200)
+                data = res.json()
+                self.assertEqual(len(data["project"]), 0)
+                self.assertEqual(len(data["merged"]), 1)
+                self.assertEqual(data["merged"][0]["name"], "GlobalAgent")
+                
+                # Create a local agent
+                local_agent = {
+                    "name": "LocalAgent",
+                    "kind": "openai",
+                    "role": "LocalRole",
+                    "model": "gpt-4",
+                    "api_key": "local_secret",
+                    "system_prompt": "local system",
+                    "max_history_turns": 20,
+                    "extra": {}
+                }
+                res = client.post("/agents", json=local_agent)
+                self.assertEqual(res.status_code, 200)
+                
+                # Fetch agents again. Local agents exist, so global agent should NOT be inherited!
+                res = client.get("/agents")
+                self.assertEqual(res.status_code, 200)
+                data = res.json()
+                self.assertEqual(len(data["project"]), 1)
+                self.assertEqual(len(data["merged"]), 1)
+                self.assertEqual(data["merged"][0]["name"], "LocalAgent")
+                
+            finally:
+                backend.server.GLOBAL_AGENTS_PATH = orig_path
 
 if __name__ == "__main__":
     unittest.main()

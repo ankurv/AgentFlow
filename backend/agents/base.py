@@ -153,10 +153,11 @@ class AgentBase(ABC):
         ) / 1_000_000
 
     @abstractmethod
-    def _raw_send(self, messages: list[dict], system: str) -> tuple[str, Usage]:
+    def _raw_send(self, messages: list[dict], system: str, mcp_tools: list[dict] = None, tool_handler: Callable = None) -> tuple[str, Usage]:
         """Return response text and normalized token usage."""
 
-    def send(self, message: str, system_override: Optional[str] = None) -> str:
+    def send(self, message: str, system_override: Optional[str] = None, ephemeral_context: Optional[str] = None, mcp_tools: list[dict] = None, tool_handler: Callable = None) -> str:
+        """Sends a message to the model and updates the internal usage metrics."""
         self.status = AgentStatus.THINKING
         user_message = Message(role="user", content=message)
         self.history.append(user_message)
@@ -168,9 +169,11 @@ class AgentBase(ABC):
 
         system = system_override or self.config.system_prompt
         raw_msgs = [{"role": m.role, "content": m.content} for m in window]
+        if ephemeral_context:
+            raw_msgs[-1]["content"] = f"{raw_msgs[-1]['content']}\n\n{ephemeral_context}"
 
         try:
-            reply, usage = self._raw_send(raw_msgs, system)
+            reply, usage = self._raw_send(raw_msgs, system, mcp_tools=mcp_tools, tool_handler=tool_handler)
         except Exception as exc:
             if self.history and self.history[-1] is user_message:
                 self.history.pop()

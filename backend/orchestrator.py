@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 import json
 from typing import Any, Callable, Optional
+from backend.mcp_client import MCPManager
 
 from .agents.base import AgentBase, Message, Usage
 from .workspace.workspace import Workspace
@@ -56,8 +57,7 @@ DEBATE_SYSTEM = """You are one of {n} agents collaborating to design a software 
 Each agent may have a standing perspective. Contribute through your own expertise while
 challenging weak ideas and building on strong ones. Be specific and opinionated.
 
-CRITICAL: You must explicitly evaluate every design decision through the lens of an external end-user.
-Any overly complex UI/UX or convoluted flows must be aggressively simplified. 
+CRITICAL: If the product involves a frontend or user interface, you must explicitly evaluate every design decision through the lens of an external end-user. Usability, user journeys, and intuitive UX must take precedence over technical backend implementation details during the early stages of debate. For purely backend or API systems, focus directly on architecture, data models, and performance.
 
 Architecture Diagrams (CRITICAL): If you are an Architect (Alpha, Beta, Cloud, Data, DevOps, or API), you MUST include a visual Mermaid.js flowchart of your proposed component connections inside your DESIGN_UPDATE block using standard ```mermaid ... ``` code fences.
 
@@ -164,14 +164,17 @@ Your debate depth limit is: {max_debate_rounds} rounds.
 Current execution mode: {mode}
 
 Guidelines for Design & Architectural Gathering:
-1. **User-Centric Simplification**: Evaluate all designs from an external user's perspective. Simplify complex UI/UX.
-2. **Scalability Analysis**: Dedicate a "## Scalability, Bottlenecks & Design Choices" section in DESIGN.md.
-3. **Architecture Diagrams**: ALWAYS include a Mermaid.js flowchart in DESIGN.md.
-4. **Plan Structure (CRITICAL)**: PLAN.md MUST be a clean package covering EXACTLY these headers: Requirements, Non-Goals, Assumptions, Alternatives, Decisions, Risks, Acceptance Criteria, and Implementation Phases. Do NOT include debate transcripts in PLAN.md or DESIGN.md.
+1. **Context-Aware Usability First**: IF the project involves a user interface, frontend, or human interaction, you MUST explicitly map out the user journey, UI flows, and UX interactions before diving into backend architectures. Prioritize summoning UI_DESIGNER or PRODUCT_MANAGER early in these cases. If the project is purely backend, CLI, or API-driven, skip UI/UX design and focus directly on architecture and data models.
+2. **User-Centric Simplification**: Evaluate all designs from an external user's perspective. Simplify complex UI/UX.
+3. **API Contract (CRITICAL)**: If a frontend and backend are involved, you MUST establish a firm API contract. Document all required API endpoints (methods, paths, payloads, responses) clearly in a dedicated section in DESIGN.md so the UI and Backend can be developed independently.
+4. **Test Planning**: If the project requires testing (or is complex enough to warrant it), summon the TEST_PLANNER to generate a comprehensive testing strategy in TESTS.md.
+5. **Scalability Analysis**: Dedicate a "## Scalability, Bottlenecks & Design Choices" section in DESIGN.md.
+6. **Architecture Diagrams**: ALWAYS include a Mermaid.js flowchart in DESIGN.md.
+7. **Plan Structure (CRITICAL)**: PLAN.md MUST be a clean package covering EXACTLY these headers: Requirements, Non-Goals, Assumptions, Alternatives, Decisions, Risks, Acceptance Criteria, and Implementation Phases. Do NOT include debate transcripts in PLAN.md or DESIGN.md.
 
 Structured workflow description:
 1. **Phase 1 (High-Level Planning & Design)**:
-   - **Dynamic Summoning**: You have access to a large pool of specialized experts. You must selectively summon them by setting ## NEXT_AGENT. If multiple competing roles are available, force them to propose competing plans and rigorously debate trade-offs.
+   - **Dynamic Summoning (Strict Needs-Based)**: You have access to a large pool of specialized experts. You MUST selectively summon them by setting ## NEXT_AGENT ONLY if their specific expertise is strictly required by the project scope. Do not summon UI agents for backend projects, or database architects for static sites, etc. If multiple competing roles are available for a required domain, force them to rigorously debate trade-offs.
 2. **Phase 2 (Deep-Dive Implementation Planning / Execution)**:
    - For EACH task in PLAN.md, force agents to debate implementation.
    - **Debate Limits (CRITICAL)**: Do NOT debate a single sub-item for more than {max_debate_rounds} turns. Force a decision.
@@ -181,6 +184,21 @@ Available agents in the virtual company pool:
 {agents_list}
 
 Read the current workspace files carefully and decide what should happen next.
+
+[OPTIONAL FILE UPDATES]
+You may optionally update workspace files directly by including these exact headers anywhere in your response. DO NOT wrap them in markdown code blocks:
+
+## DESIGN_UPDATE
+<complete updated design document>
+
+## PLAN_UPDATE
+<complete updated plan document>
+
+## QUESTIONS
+<if you need clarification from the user, write your questions here>
+
+## FILE: path/to/file.ext
+<complete file content>
 
 Respond in this EXACT format:
 
@@ -203,7 +221,8 @@ Respond in this EXACT format:
 <ONLY output this section if VERDICT is COMPLETE. Verify requirement coverage, task acceptance criteria, unresolved questions, contradictory decisions, risk mitigations, and valid diagrams. Output PASS or FAIL.>
 
 ## VERDICT
-<CONTINUE, COMPLETE, or PAUSE_FOR_INPUT>"""
+<CONTINUE, COMPLETE, or PAUSE_FOR_INPUT>
+(Note: When the design and plan are finalized, set VERDICT to COMPLETE. If you need user clarification or approval on a major decision, set VERDICT to PAUSE_FOR_INPUT.)"""
 
 
 # ─── Orchestrator ─────────────────────────────────────────────────────────────
@@ -230,6 +249,9 @@ class Orchestrator:
         self.require_approval = require_approval
         self.mode = mode
         self.restore = restore
+        
+        self.mcp_manager = None
+        self.mcp_tools = []
 
         # Steering controls
         self._paused = False
@@ -267,6 +289,12 @@ class Orchestrator:
         self._running = False
         self._pause_event.set()
         self._recovery_event.set()
+        if self.mcp_manager:
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self.mcp_manager.stop())
+            except RuntimeError:
+                asyncio.run(self.mcp_manager.stop())
 
     @property
     def failed_turn(self) -> dict[str, Any] | None:
@@ -286,6 +314,14 @@ class Orchestrator:
     async def run(self, idea: str):
         self._running = True
         self.idea = idea
+        
+        # Load and start MCP servers if present
+        if hasattr(self.ws, "store") and self.ws.store:
+            mcp_configs = self.ws.store.get_mcp_servers()
+            if mcp_configs:
+                self.mcp_manager = MCPManager(mcp_configs)
+                await self.mcp_manager.start()
+                self.mcp_tools = await self.mcp_manager.list_tools()
         
         # Only initialize workspace files if design doesn't exist yet or is empty.
         # We never overwrite existing design/plan docs, so the agents can preserve context across server restarts.
@@ -371,6 +407,7 @@ class Orchestrator:
             
             response = await self._send_agent(target_agent, prompt, turn_id, turn_context)
             self._record_turn_usage(target_agent)
+            self.ws.append("logbook", response, target_agent.name, "Turn completed")
             
             self._emit(Event(EventKind.TURN_END, agent=target_agent.name, data={
                 "turn_id": turn_id, "attempt": self._turn_attempts[turn_id],
@@ -446,21 +483,25 @@ class Orchestrator:
                     f"{DEBATE_SYSTEM.format(n=len(self.agents))}"
                     f"{seed_block}\n\n"
                     f"Debate round {round_num}/{self.max_debate_rounds}.\n\n"
-                    f"Current Workspace snapshot:\n{full_ctx}{steer_block}\n\n"
+                    f"{steer_block}\n\n"
                     "Add your contributions now."
                 )
+                ephemeral = f"Current Workspace snapshot:\n{full_ctx}"
 
                 turn_context = {"round": round_num, "phase": "debate",
                                 "standing_role": agent.config.role}
                 turn_id = self._begin_turn(agent, turn_context)
 
-                response = await self._send_agent(agent, prompt, turn_id, turn_context)
+                response = await self._send_agent(
+                    agent, prompt, turn_id, turn_context, ephemeral_context=ephemeral
+                )
                 self._record_turn_usage(agent)
 
                 self._apply_debate_response(agent.name, round_num, response)
                 vote = self.ws.parse_vote(response)
                 votes[agent.name] = vote
 
+                self.ws.append("logbook", response, agent.name, "Turn completed")
                 self._emit(Event(EventKind.TURN_END, agent=agent.name, data={
                     "turn_id": turn_id, "attempt": self._turn_attempts[turn_id],
                     "round": round_num, "response": response,
@@ -568,6 +609,7 @@ class Orchestrator:
                 verdict = self._apply_build_response(agent.name, role, iteration, response)
                 verdicts[role] = verdict
 
+                self.ws.append("logbook", response, agent.name, "Turn completed")
                 self._emit(Event(EventKind.TURN_END, agent=agent.name, data={
                     "turn_id": turn_id, "attempt": self._turn_attempts[turn_id],
                     "iteration": iteration, "role": role,
@@ -712,6 +754,7 @@ class Orchestrator:
         prompt: str,
         turn_id: str = "turn-manual",
         turn_context: Optional[dict] = None,
+        ephemeral_context: Optional[str] = None,
     ) -> str:
         attempt = self._turn_attempts.get(turn_id, 1)
         self._turn_attempts[turn_id] = attempt
@@ -719,8 +762,19 @@ class Orchestrator:
         max_retries = int(agent.config.extra.get("rate_limit_max_retries", 0) or 0)
         while self._running:
             try:
+                def call_mcp_tool(name: str, args: dict) -> str:
+                    # Execute async MCP tool call in the main thread's event loop
+                    if not self.mcp_manager:
+                        raise RuntimeError("MCP Manager not initialized")
+                    future = asyncio.run_coroutine_threadsafe(
+                        self.mcp_manager.call_tool(name, args),
+                        asyncio.get_running_loop()
+                    )
+                    return future.result()
+
                 response = await asyncio.to_thread(
-                    agent.send, prompt, self._agent_system(agent)
+                    agent.send, prompt, self._agent_system(agent), ephemeral_context,
+                    mcp_tools=self.mcp_tools, tool_handler=call_mcp_tool
                 )
                 self._failed_turn = None
                 return response
@@ -871,7 +925,7 @@ class Orchestrator:
         orig_system = coordinator.config.system_prompt
         coordinator.config.system_prompt = system_prompt
 
-        max_steps = 30
+        max_steps = max(10, self.max_debate_rounds * 2)
         previous_summon = None
         consecutive_loops = 0
         for step in range(1, max_steps + 1):
@@ -880,7 +934,7 @@ class Orchestrator:
                 break
 
             # 1. Call Coordinator
-            delta = self.ws.snapshot()
+            delta = self.ws.full_context()
             new_steering = await self._drain_steer()
             steer_block = f"\n\n[HUMAN STEERING]\n{new_steering}" if new_steering else ""
             seed_block = f"\n\nProduct idea: {self.idea}" if step == 1 else ""
@@ -888,19 +942,22 @@ class Orchestrator:
 
             prompt = (
                 f"Coordinator execution step {step}/{max_steps}.\n"
-                f"Current Workspace snapshot:\n{delta}{steer_block}{seed_block}{agent_feedback_block}\n\n"
+                f"{steer_block}{seed_block}{agent_feedback_block}\n\n"
                 "Determine the NEXT_AGENT to run, provide INSTRUCTIONS, and state the VERDICT (CONTINUE or COMPLETE)."
             )
+            ephemeral = f"Current Workspace snapshot:\n{delta}"
 
             turn_context = {"step": step, "phase": "coordinator", "standing_role": coordinator.config.role}
             turn_id = self._begin_turn(coordinator, turn_context)
 
-            response = await self._send_agent(coordinator, prompt, turn_id, turn_context)
+            response = await self._send_agent(
+                coordinator, prompt, turn_id, turn_context, ephemeral_context=ephemeral
+            )
             self._record_turn_usage(coordinator)
 
             # Apply coordinator's own plan/design updates or file writes
             self._apply_coordinator_agent_response(coordinator.name, response)
-
+            self.ws.append("logbook", response, coordinator.name, "Turn completed")
             self._emit(Event(EventKind.TURN_END, agent=coordinator.name, data={
                 "turn_id": turn_id, "attempt": self._turn_attempts[turn_id],
                 "step": step, "response": response,
@@ -968,6 +1025,12 @@ class Orchestrator:
             agent_prompt = (
                 f"Coordinator Instructions:\n{instructions}\n\n"
                 f"Current Workspace snapshot:\n{agent_full_ctx}\n\n"
+                f"[OPTIONAL FILE UPDATES]\n"
+                f"You may optionally update workspace files directly by including these exact headers anywhere in your response. DO NOT wrap them in markdown code blocks:\n"
+                f"## DESIGN_UPDATE\n<complete updated design document>\n\n"
+                f"## PLAN_UPDATE\n<complete updated plan document>\n\n"
+                f"## QUESTIONS\n<if you need clarification from the user, write your questions here>\n\n"
+                f"## FILE: path/to/file.ext\n<complete file content>\n\n"
                 f"Please execute your turn now."
             )
 
@@ -979,7 +1042,7 @@ class Orchestrator:
             self._last_agent_feedback = f"{selected_agent.name} said:\n{agent_response}"
 
             self._apply_coordinator_agent_response(selected_agent.name, agent_response)
-
+            self.ws.append("logbook", agent_response, selected_agent.name, "Turn completed")
             self._emit(Event(EventKind.TURN_END, agent=selected_agent.name, data={
                 "turn_id": agent_turn_id, "attempt": self._turn_attempts[agent_turn_id],
                 "step": step, "response": agent_response,
