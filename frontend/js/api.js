@@ -540,7 +540,7 @@ function clearFeed() {
 async function showInteractiveQuestions() {
   try {
     const res = await fetch('/workspace/file/questions').then(r=>r.json());
-    if (res && res.content && res.content.trim().length > 0) {
+    if (res && res.content && res.content.trim().length > 0 && res.content.trim() !== '(empty)') {
       const pendingPane = document.getElementById('contextPendingActions');
       const bodyEl = document.getElementById('contextQuestionsBody');
       if (pendingPane && bodyEl) {
