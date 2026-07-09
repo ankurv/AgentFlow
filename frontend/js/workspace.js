@@ -172,11 +172,12 @@ async function loadWsFile(key) {
       
       const mermaidMatches = [...designContent.matchAll(/```mermaid\n([\s\S]*?)```/g)];
       
-      if (mermaidMatches.length > 0 && diagramsContainer && mapContainer) {
-        diagramsContainer.innerHTML = '';
+      if (diagramsContainer && mapContainer) {
         mapContainer.style.display = 'flex';
+        diagramsContainer.innerHTML = '';
         
-        mermaidMatches.forEach((match, idx) => {
+        if (mermaidMatches.length > 0) {
+          mermaidMatches.forEach((match, idx) => {
           const rawGraph = match[1].trim();
           
           const wrapper = document.createElement('div');
@@ -204,9 +205,15 @@ async function loadWsFile(key) {
             }
           }
         });
-      } else if (mapContainer) {
-        mapContainer.style.display = 'none';
-        if (diagramsContainer) diagramsContainer.innerHTML = '';
+        } else {
+          // Empty State
+          diagramsContainer.innerHTML = `
+            <div style="padding: 24px; text-align:center; color:var(--muted); font-size:13px; border: 1px dashed var(--border); border-radius: 8px;">
+              <div style="margin-bottom:12px">No visual architecture diagrams found in DESIGN.md</div>
+              <button class="btn btn-secondary" onclick="generateVisualDesign()" style="padding:6px 12px">Generate Visual Design</button>
+            </div>
+          `;
+        }
       }
     } catch (err) {
       console.error("Failed to load dashboard files", err);
@@ -263,4 +270,17 @@ function renderHistory(runs) {
     </div>
   </div>`).join('');
 }
+
+window.generateVisualDesign = function() {
+  const steerInput = document.getElementById('steerInput');
+  const chatTabBtn = document.getElementById('tab-chat'); // Assuming id or querySelector
+  if (steerInput) {
+    steerInput.value = "Review the current project state and update DESIGN.md to include a comprehensive visual architecture diagram using Mermaid.js.";
+    if (window.sendSteer) window.sendSteer();
+    
+    // Switch to Chat tab
+    const chatTab = Array.from(document.querySelectorAll('.tab')).find(t => t.textContent.includes('Live Feed'));
+    if (chatTab) chatTab.click();
+  }
+};
 
