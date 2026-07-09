@@ -159,16 +159,7 @@
 • Once finished, head over to the <strong>Project Files</strong> tab to review the generated DESIGN.md and PLAN.md before you write any code!</div>
             </div>
 
-            <!-- Pending Actions / Questions Section -->
-            <div id="contextPendingActions" style="flex:1; padding:20px; display:none; flex-direction:column; overflow-y:auto;">
-              <h2 style="margin-top:0; color:var(--accent1); font-family:var(--heading-font); text-transform:uppercase; font-size:14px; margin-bottom:12px;">❓ Action Required</h2>
-              <div id="contextQuestionsBody" style="font-size:14px; line-height:1.5; margin-bottom:16px;"></div>
-              
-              <div style="display:flex; flex-direction:column; gap:8px;">
-                <textarea id="contextAnswerInput" rows="3" placeholder="Type your answer or decision here..." style="width:100%; resize:vertical; font-family:var(--font); padding:10px; border-radius:6px; border:1px solid var(--border); background:var(--bg); color:var(--text);"></textarea>
-                <button class="btn btn-primary" onclick="submitContextAnswer()" style="align-self:flex-end;">Submit Answer</button>
-              </div>
-            </div>
+            <!-- The Pending Actions UI was moved to the Right Pane Dashboard -->
           </div>
         </div>
         <div class="steer-bar" style="display:flex; flex-direction:column; gap:10px">
@@ -210,7 +201,29 @@
           <button class="btn btn-secondary" onclick="exportContext()" style="margin-top: 12px; margin-right: 12px; font-weight:600; padding:6px 14px;">⬇️ Export Context</button>
         </div>
         
-        <div id="dashboardView" style="margin-top: 12px; display:flex; flex-direction:column; gap:16px; flex:1; overflow-y:auto; padding-right:8px">
+        <div id="dashboardView" style="margin-top: 12px; display:flex; flex-direction:column; gap:16px; flex:1; overflow-y:auto; padding-right:8px; padding-left:20px; padding-bottom:40px;">
+          
+          <!-- Action Required / User Input -->
+          <div id="contextPendingActions" style="background:rgba(99, 102, 241, 0.05); border:1px solid var(--accent); border-radius:var(--radius); padding:24px; display:none; flex-direction:column; box-shadow:0 8px 32px var(--accent-glow); animation:pulseBorder 2s infinite;">
+            <h2 style="margin-top:0; color:var(--accent2); font-family:var(--heading-font); text-transform:uppercase; font-size:15px; margin-bottom:16px; display:flex; align-items:center; gap:8px;">
+              <span style="font-size:18px">❓</span> Action Required
+            </h2>
+            <div id="contextQuestionsBody" class="md-content" style="font-size:14px; line-height:1.6; margin-bottom:20px; color:var(--text);"></div>
+            <div style="display:flex; flex-direction:column; gap:12px;">
+              <textarea id="contextAnswerInput" rows="4" placeholder="Type your decision, guidance, or answer here..." style="width:100%; resize:vertical; font-family:var(--font); padding:14px; border-radius:8px; border:1px solid var(--border); background:rgba(0,0,0,0.2); color:var(--text); font-size:14px;"></textarea>
+              <button class="btn btn-primary" onclick="submitContextAnswer()" style="align-self:flex-end; font-size:14px; padding:10px 24px;">Submit Decision</button>
+            </div>
+          </div>
+
+          <!-- Live Insights Stream -->
+          <div id="liveInsightsSection" style="background:rgba(255,255,255,0.02); border:1px solid var(--border); border-radius:var(--radius); padding:24px; display:flex; flex-direction:column;">
+            <h4 style="font-family:var(--heading-font); margin:0 0 16px 0; font-size:13px; text-transform:uppercase; color:var(--text-muted); display:flex; align-items:center; gap:8px;">
+              <div class="status-indicator running" style="width:6px;height:6px"></div> Live Consensus Insights
+            </h4>
+            <div id="liveInsightsContainer" style="display:flex; flex-direction:column; gap:12px; font-size:13.5px; line-height:1.6; color:#cbd5e1;">
+              <div style="color:var(--muted); font-style:italic;" id="liveInsightsEmpty">No insights gathered yet. Start a run to see live team decisions!</div>
+            </div>
+          </div>
           <!-- Mermaid visual map container -->
           <div id="mermaidMapContainer" style="background:rgba(255,255,255,0.02); border:1px solid var(--border); border-radius:var(--radius); padding:20px; display:none; flex-direction:column; flex:1">
             <h4 style="font-family:var(--heading-font); margin:0 0 16px 0; font-size:13px; text-transform:uppercase; color:var(--text-muted)">📐 Visual Architecture & Flow Diagrams</h4>

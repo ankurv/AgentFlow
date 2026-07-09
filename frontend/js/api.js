@@ -100,8 +100,9 @@ function handleEvent(ev) {
     fetchAgentStatus();
   }
   
-  if (ev.kind === 'turn_end' && typeof refreshWorkspace === 'function') {
-    refreshWorkspace();
+  if (ev.kind === 'turn_end') {
+    if (typeof refreshWorkspace === 'function') refreshWorkspace();
+    extractLiveInsights(ev);
   }
 }
 
@@ -535,6 +536,11 @@ function clearFeed() {
   document.getElementById('totalCost').textContent = '$0.000000';
   document.getElementById('progressTaskList').innerHTML = '<div style="color:var(--muted);font-size:12px">No tasks defined in PLAN.md yet.</div>';
   document.getElementById('eventCount').textContent = '0';
+  
+  const liveInsights = document.getElementById('liveInsightsContainer');
+  if (liveInsights) {
+    liveInsights.innerHTML = '<div style="color:var(--muted); font-style:italic;" id="liveInsightsEmpty">No insights gathered yet. Start a run to see live team decisions!</div>';
+  }
 }
 
 async function showInteractiveQuestions() {
@@ -545,11 +551,62 @@ async function showInteractiveQuestions() {
       const bodyEl = document.getElementById('contextQuestionsBody');
       if (pendingPane && bodyEl) {
         pendingPane.style.display = 'flex';
-        bodyEl.innerHTML = marked.parse(res.content);
+        bodyEl.innerHTML = parseMarkdown(res.content);
+        if (typeof loadWsFile === 'function') {
+          loadWsFile('dashboard');
+        }
       }
     }
   } catch (err) {
     console.error("Failed to load interactive questions", err);
+  }
+}
+
+function extractLiveInsights(ev) {
+  if (ev.kind !== 'turn_end' || !ev.data.response) return;
+  const text = ev.data.response;
+  
+  const consensusMatch = text.match(/## CONSENSUS_APPEND\s*\n([\s\S]*?)(?=##|$)/);
+  const decisionMatch = text.match(/## DECISION_CHECKPOINT\s*\n([\s\S]*?)(?=##|$)/);
+  
+  let insightText = '';
+  if (consensusMatch) insightText = consensusMatch[1].trim();
+  else if (decisionMatch) insightText = decisionMatch[1].trim();
+  
+  if (insightText && !insightText.includes('VOTE: DISAGREE')) {
+    const container = document.getElementById('liveInsightsContainer');
+    const emptyMsg = document.getElementById('liveInsightsEmpty');
+    if (container) {
+      if (emptyMsg) emptyMsg.style.display = 'none';
+      
+      const insightDiv = document.createElement('div');
+      insightDiv.style.background = 'rgba(255,255,255,0.03)';
+      insightDiv.style.padding = '12px';
+      insightDiv.style.borderRadius = '8px';
+      insightDiv.style.borderLeft = '3px solid var(--accent)';
+      
+      const agentLabel = document.createElement('div');
+      agentLabel.style.fontSize = '11px';
+      agentLabel.style.fontWeight = 'bold';
+      agentLabel.style.color = 'var(--muted)';
+      agentLabel.style.marginBottom = '6px';
+      agentLabel.style.textTransform = 'uppercase';
+      agentLabel.textContent = ev.agent || 'Agent';
+      
+      const content = document.createElement('div');
+      content.className = 'md-content';
+      content.innerHTML = parseMarkdown(insightText);
+      
+      insightDiv.appendChild(agentLabel);
+      insightDiv.appendChild(content);
+      
+      container.insertBefore(insightDiv, container.firstChild);
+      
+      // Keep only the last 10 insights to avoid clutter
+      while (container.children.length > 11) {
+        container.removeChild(container.lastChild);
+      }
+    }
   }
 }
 

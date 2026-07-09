@@ -55,6 +55,7 @@
   .status-dot.error   { background: var(--red); box-shadow: 0 0 8px var(--red); }
   .status-dot.needs_attention { background: var(--red); animation: blink 1.2s ease-in-out infinite; box-shadow: 0 0 8px var(--red); }
   @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.4} }
+  @keyframes pulseBorder { 0%,100%{border-color: rgba(99,102,241,0.4); box-shadow: 0 0 16px rgba(99,102,241,0.1);} 50%{border-color: rgba(99,102,241,1); box-shadow: 0 0 32px rgba(99,102,241,0.4);} }
   header .spacer { flex: 1; }
   
   .project-strip { min-height: 64px; padding: 12px 24px; display: flex; align-items: center;
