@@ -1029,6 +1029,7 @@ class Orchestrator:
                 f"You may optionally update workspace files directly by including these exact headers anywhere in your response. DO NOT wrap them in markdown code blocks:\n"
                 f"## DESIGN_UPDATE\n<complete updated design document>\n\n"
                 f"## PLAN_UPDATE\n<complete updated plan document>\n\n"
+                f"## DECISION_CHECKPOINT\n<if you need the user to make a critical decision (e.g. Postgres vs SQLite), summarize trade-offs and ask for decision>\n\n"
                 f"## QUESTIONS\n<if you need clarification from the user, write your questions here>\n\n"
                 f"## FILE: path/to/file.ext\n<complete file content>\n\n"
                 f"Please execute your turn now."
@@ -1041,7 +1042,18 @@ class Orchestrator:
             self._record_turn_usage(selected_agent)
             self._last_agent_feedback = f"{selected_agent.name} said:\n{agent_response}"
 
+            agent_decision = self.ws.parse_section(agent_response, "DECISION_CHECKPOINT").strip()
+            agent_questions = self.ws.parse_section(agent_response, "QUESTIONS").strip()
+
             self._apply_coordinator_agent_response(selected_agent.name, agent_response)
+            
+            if agent_decision:
+                self.ws.write("questions", f"# Decision Checkpoint\n\n{agent_decision}")
+                self._emit(Event(EventKind.FILE_WRITE, agent=selected_agent.name, data={"file": "QUESTIONS.md"}))
+            if agent_questions:
+                self.ws.write("questions", f"# Clarifying Questions\n\n{agent_questions}")
+                self._emit(Event(EventKind.FILE_WRITE, agent=selected_agent.name, data={"file": "QUESTIONS.md"}))
+
             self.ws.append("logbook", agent_response, selected_agent.name, "Turn completed")
             self._emit(Event(EventKind.TURN_END, agent=selected_agent.name, data={
                 "turn_id": agent_turn_id, "attempt": self._turn_attempts[agent_turn_id],
@@ -1050,6 +1062,15 @@ class Orchestrator:
             }))
             if await self._enforce_token_budget("coordinator_agent", {"step": step, "agent": selected_agent.name}):
                 break
+
+            if agent_decision or agent_questions:
+                self._emit(Event(EventKind.PHASE, data={
+                    "phase": "coordinator_agent", "status": "waiting_for_approval", "step": step
+                }))
+                self.pause()
+                await self._wait_if_paused()
+                if not self._running:
+                    break
 
 
 
@@ -1072,18 +1093,24 @@ class Orchestrator:
             quality_gate = self.ws.parse_section(response, "QUALITY_GATE").strip()
             completion_errors = self._coordinator_completion_errors(quality_gate)
                 
-        # Decision Checkpoint Check
-        if verdict == "PAUSE_FOR_INPUT":
-            decision = self.ws.parse_section(response, "DECISION_CHECKPOINT").strip()
-            if not decision:
-                raise RuntimeError("VERDICT was PAUSE_FOR_INPUT, but DECISION_CHECKPOINT was missing. You must provide options and trade-offs for the user.")
+        # Decision Checkpoint & Questions Check
+        decision = self.ws.parse_section(response, "DECISION_CHECKPOINT").strip()
+        questions = self.ws.parse_section(response, "QUESTIONS").strip()
+
+        if verdict == "PAUSE_FOR_INPUT" and not decision and not questions:
+            raise RuntimeError("VERDICT was PAUSE_FOR_INPUT, but neither DECISION_CHECKPOINT nor QUESTIONS were provided. You must provide options or questions for the user.")
+
+        if decision:
             self.ws.write("questions", f"# Decision Checkpoint\n\n{decision}")
             self._emit(Event(EventKind.FILE_WRITE, agent="Coordinator", data={"file": "QUESTIONS.md"}))
+            if verdict == "CONTINUE":
+                verdict = "PAUSE_FOR_INPUT"
         
-        questions = self.ws.parse_section(response, "QUESTIONS").strip()
         if questions:
             self.ws.write("questions", f"# Clarifying Questions\n\n{questions}")
             self._emit(Event(EventKind.FILE_WRITE, agent="Coordinator", data={"file": "QUESTIONS.md"}))
+            if verdict == "CONTINUE":
+                verdict = "PAUSE_FOR_INPUT"
 
         if verdict == "CONTINUE" and not next_agent:
             raise RuntimeError("Coordinator must provide NEXT_AGENT when continuing.")
