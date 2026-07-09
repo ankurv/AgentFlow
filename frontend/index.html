@@ -31,10 +31,13 @@
 
 </header>
 
-<div class="project-strip">
-  <span class="project-label">Project:</span>
-  <span class="project-state" id="projectState" style="font-size: 13.5px; margin-right: 12px; font-weight:600; color:var(--text);">No project open</span>
-  <button class="btn btn-primary" id="openProjectBtn" onclick="openProject()">Switch Project</button>
+<div class="project-strip" style="padding: 16px 24px;">
+  <span class="project-label" style="font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em;">Current Project:</span>
+  <span class="project-state" id="projectState" style="font-size: 14px; margin-right: 16px; margin-left: 8px; font-weight:700; color:var(--text); letter-spacing: -0.2px;">No project open</span>
+  <button class="btn btn-secondary" id="openProjectBtn" onclick="openProject()" style="padding: 6px 12px; font-size: 12px; border-radius: 20px;">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:2px"><path d="M17 1l4 4-4 4"></path><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><path d="M7 23l-4-4 4-4"></path><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
+    Switch Project
+  </button>
   <div style="flex:1"></div>
 </div>
 
