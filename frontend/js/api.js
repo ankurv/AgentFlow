@@ -352,8 +352,36 @@ async function stopRun() {
   updateStatus('idle');
 }
 
+function handleSteerInput(event) {
+  if (event.key === 'Enter') {
+    steer();
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault();
+    if (promptHistoryIndex > 0) {
+      promptHistoryIndex--;
+      document.getElementById('steerInput').value = promptHistory[promptHistoryIndex];
+    }
+  } else if (event.key === 'ArrowDown') {
+    event.preventDefault();
+    if (promptHistoryIndex < promptHistory.length - 1) {
+      promptHistoryIndex++;
+      document.getElementById('steerInput').value = promptHistory[promptHistoryIndex];
+    } else {
+      promptHistoryIndex = promptHistory.length;
+      document.getElementById('steerInput').value = '';
+    }
+  }
+}
+
 async function steer() {
   const msg = document.getElementById('steerInput').value.trim();
+
+  if (msg) {
+    if (promptHistory.length === 0 || promptHistory[promptHistory.length - 1] !== msg) {
+      promptHistory.push(msg);
+    }
+    promptHistoryIndex = promptHistory.length;
+  }
 
   if (appStatus === 'idle' || appStatus === 'done' || appStatus === 'error') {
     document.getElementById('steerInput').value = '';

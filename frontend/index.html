@@ -174,7 +174,7 @@
         <div class="steer-bar" style="display:flex; flex-direction:column; gap:10px">
           <!-- Action chips (visible when idle) -->
                     <div style="display:flex; gap:10px; width:100%">
-            <input id="steerInput" placeholder="Type a prompt/task here and press Enter to start the run…" autocomplete="off" data-lpignore="true" onkeydown="if(event.key==='Enter')steer()" style="flex:1">
+            <input id="steerInput" placeholder="Type a prompt/task here and press Enter to start the run…" autocomplete="off" data-lpignore="true" onkeydown="handleSteerInput(event)" style="flex:1">
             <button class="btn btn-secondary" id="sendBtn" onclick="steer()">Send</button>
             <button class="btn btn-secondary" id="resetBtn" onclick="resetRun()" style="display:none">Reset</button>
             <button class="btn btn-secondary" id="pauseBtn" onclick="pauseResume()" style="display:none">Pause</button>

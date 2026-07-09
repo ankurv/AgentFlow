@@ -14,6 +14,8 @@ let projectOpen = false;
 let currentProjectPath = '';
 let toastTimer = null;
 let lastMermaidCode = '';
+let promptHistory = [];
+let promptHistoryIndex = -1;
 
 function notify(message, isError=false) {
   const toast = document.getElementById('toast');
