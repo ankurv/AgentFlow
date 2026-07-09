@@ -560,7 +560,7 @@ window.submitContextAnswer = function() {
   const steerInput = document.getElementById('steerInput');
   if (steerInput) {
      steerInput.value = answer;
-     if (window.sendSteer) window.sendSteer();
+     steer();
   }
   
   document.getElementById('contextPendingActions').style.display = 'none';
