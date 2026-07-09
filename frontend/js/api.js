@@ -531,18 +531,23 @@ function renderPlanProgress(markdown) {
       
       let checkIcon = '<span class="task-bullet todo"></span>';
       let style = '';
+      let actionBtn = '';
       if (checked) {
         checkIcon = '<span class="task-bullet done">✓</span>';
         style = 'text-decoration: line-through; opacity: 0.55;';
       } else if (inProgress) {
         checkIcon = '<span class="task-bullet running">⋯</span>';
         style = 'color: var(--accent2); font-weight: 500;';
+        actionBtn = `<button class="btn btn-secondary task-action-btn" style="margin-left:auto; font-size:10px; padding:2px 6px" onclick="focusTask(\`${text.replace(/`/g, '\\`').replace(/"/g, '&quot;')}\`)">Focus</button>`;
+      } else {
+        actionBtn = `<button class="btn btn-secondary task-action-btn" style="margin-left:auto; font-size:10px; padding:2px 6px; opacity:0; transition: opacity 0.2s" onclick="focusTask(\`${text.replace(/`/g, '\\`').replace(/"/g, '&quot;')}\`)">Run</button>`;
       }
       
       html += `
-        <div class="task-item" style="display:flex;align-items:center;gap:8px;margin-left:${marginLeft}px;${style}">
+        <div class="task-item" style="display:flex;align-items:center;gap:8px;margin-left:${marginLeft}px;${style}" onmouseover="const b=this.querySelector('.task-action-btn'); if(b) b.style.opacity=1" onmouseout="const b=this.querySelector('.task-action-btn'); if(b) b.style.opacity=0">
           ${checkIcon}
-          <span class="task-text">${escHtml(text)}</span>
+          <span class="task-text" style="flex:1">${escHtml(text)}</span>
+          ${actionBtn}
         </div>
       `;
     }
@@ -572,6 +577,13 @@ function renderPlanProgress(markdown) {
   }
 }
 
+window.focusTask = function(taskText) {
+  const steerInput = document.getElementById('steerInput');
+  if (steerInput) {
+    steerInput.value = `Please focus on completing this task from the plan next: "${taskText}"`;
+    if (window.sendSteer) window.sendSteer();
+  }
+};
 
 async function exportContext() {
   try {
