@@ -113,7 +113,7 @@ class Workspace:
             "consensus": "CONSENSUS.md", "tests": "TEST_RESULTS.md",
             "questions": "QUESTIONS.md", "logbook": "LOGBOOK.md"
         }
-        return self.root / names[key]
+        return self.project_root / names[key]
 
     def read(self, key: str) -> str:
         path = self._file(key)
