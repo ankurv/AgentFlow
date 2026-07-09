@@ -278,7 +278,6 @@ async function startRun(prompt) {
   document.getElementById('totalTokens').textContent = '0';
   document.getElementById('totalCachedTokens').textContent = '0';
   document.getElementById('totalCost').textContent = '$0.000000';
-  document.getElementById('progressTaskList').innerHTML = '<div style="color:var(--muted);font-size:12px">Planning task list...</div>';
   document.getElementById('eventCount').textContent = '0';
   document.getElementById('feed').innerHTML = '';
 
