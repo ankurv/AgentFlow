@@ -72,8 +72,8 @@
           <span style="font-weight:600; font-size:14px; color:var(--text);">Max Tokens</span>
           <span style="font-size:12px; color:var(--muted);">Set the maximum token limit per run</span>
         </div>
-        <div style="display:flex; gap:12px; align-items:center;">
-          <input type="text" id="maxTokensInput" value="100000" style="width:120px; padding:8px 12px; border:1px solid var(--border); border-radius:var(--radius); background:var(--bg); color:var(--text); font-family:var(--mono); text-align:right;">
+          <div style="display:flex; gap:12px; align-items:center;">
+          <input type="text" id="maxTokensInput" value="100000" autocomplete="off" data-lpignore="true" style="width:120px; padding:8px 12px; border:1px solid var(--border); border-radius:var(--radius); background:var(--bg); color:var(--text); font-family:var(--mono); text-align:right;">
           <button class="btn btn-secondary" onclick="updateTokens()" style="padding:8px 16px;">Save</button>
         </div>
       </div>
@@ -174,7 +174,7 @@
         <div class="steer-bar" style="display:flex; flex-direction:column; gap:10px">
           <!-- Action chips (visible when idle) -->
                     <div style="display:flex; gap:10px; width:100%">
-            <input id="steerInput" placeholder="Type a prompt/task here and press Enter to start the run…" onkeydown="if(event.key==='Enter')steer()" style="flex:1">
+            <input id="steerInput" placeholder="Type a prompt/task here and press Enter to start the run…" autocomplete="off" data-lpignore="true" onkeydown="if(event.key==='Enter')steer()" style="flex:1">
             <button class="btn btn-secondary" id="sendBtn" onclick="steer()">Send</button>
             <button class="btn btn-secondary" id="resetBtn" onclick="resetRun()" style="display:none">Reset</button>
             <button class="btn btn-secondary" id="pauseBtn" onclick="pauseResume()" style="display:none">Pause</button>
@@ -264,10 +264,10 @@
             <div style="font-size:13px; font-weight:600;">Add New MCP Server</div>
             <button class="btn btn-secondary" style="padding:4px 8px; font-size:11px" onclick="document.getElementById('mcpAddForm').style.display='none'">Cancel</button>
           </div>
-          <input type="text" id="mcpName" placeholder="Name (e.g. filesystem)" class="input-modern" style="width:100%">
-          <input type="text" id="mcpCommand" placeholder="Command or SSE URL (e.g. npx or http://localhost:8000/sse)" class="input-modern" style="width:100%">
-          <input type="text" id="mcpArgs" placeholder="Arguments (comma separated, e.g. -y,@modelcontextprotocol/server-filesystem,/Users)" class="input-modern" style="width:100%">
-          <input type="text" id="mcpEnv" placeholder="Env Vars (key=value,key2=value2)" class="input-modern" style="width:100%">
+          <input type="text" id="mcpName" placeholder="Name (e.g. filesystem)" class="input-modern" autocomplete="off" data-lpignore="true" style="width:100%">
+          <input type="text" id="mcpCommand" placeholder="Command or SSE URL (e.g. npx or http://localhost:8000/sse)" class="input-modern" autocomplete="off" data-lpignore="true" style="width:100%">
+          <input type="text" id="mcpArgs" placeholder="Arguments (comma separated, e.g. -y,@modelcontextprotocol/server-filesystem,/Users)" class="input-modern" autocomplete="off" data-lpignore="true" style="width:100%">
+          <input type="text" id="mcpEnv" placeholder="Env Vars (key=value,key2=value2)" class="input-modern" autocomplete="off" data-lpignore="true" style="width:100%">
           <button class="btn btn-primary" style="align-self:flex-start;" onclick="addMCPServer()">Save Server</button>
         </div>
       </div>
