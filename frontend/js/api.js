@@ -63,6 +63,9 @@ function handleEvent(ev) {
   if (ev.kind === 'phase') {
     if (ev.data.status === 'waiting_for_continuation' || ev.data.status === 'waiting_for_approval' || ev.data.status === 'budget_exhausted') {
       updateStatus('paused');
+      if (ev.data.status === 'waiting_for_approval') {
+        showInteractiveQuestions();
+      }
     } else {
       updateStatus('running');
     }
@@ -76,9 +79,6 @@ function handleEvent(ev) {
   // Update agent sidebar on turn events
   if (ev.kind === 'turn_start' || ev.kind === 'turn_end' || ev.kind === 'retry' || ev.kind === 'error') {
     fetchAgentStatus();
-  }
-  if (ev.kind === 'file_write' && ev.data.file === 'PLAN.md') {
-    refreshPlanProgress();
   }
 }
 
@@ -496,94 +496,31 @@ function clearFeed() {
   document.getElementById('eventCount').textContent = '0';
 }
 
-async function refreshPlanProgress() {
+async function showInteractiveQuestions() {
   try {
-    const res = await fetch('/workspace/file/plan').then(r=>r.json());
-    if (res && res.content) {
-      renderPlanProgress(res.content);
-    }
-  } catch (err) {
-    console.error("Failed to load plan progress", err);
-  }
-}
-
-function renderPlanProgress(markdown) {
-  const container = document.getElementById('progressTaskList');
-  if (!container) return;
-  const lines = markdown.split('\n');
-  let html = '';
-  let totalTasks = 0;
-  let completedTasks = 0;
-
-  lines.forEach(line => {
-    const match = line.match(/^(\s*)-\s*\[([ xX/])\]\s*(.*)$/);
-    if (match) {
-      totalTasks++;
-      const indent = match[1].length;
-      const statusChar = match[2].toLowerCase();
-      const checked = statusChar === 'x';
-      const inProgress = statusChar === '/';
-      
-      if (checked) completedTasks++;
-      
-      const text = match[3].trim();
-      const marginLeft = indent * 12;
-      
-      let checkIcon = '<span class="task-bullet todo"></span>';
-      let style = '';
-      let actionBtn = '';
-      if (checked) {
-        checkIcon = '<span class="task-bullet done">✓</span>';
-        style = 'text-decoration: line-through; opacity: 0.55;';
-      } else if (inProgress) {
-        checkIcon = '<span class="task-bullet running">⋯</span>';
-        style = 'color: var(--accent2); font-weight: 500;';
-        actionBtn = `<button class="btn btn-secondary task-action-btn" style="margin-left:auto; font-size:10px; padding:2px 6px" onclick="focusTask(\`${text.replace(/`/g, '\\`').replace(/"/g, '&quot;')}\`)">Focus</button>`;
-      } else {
-        actionBtn = `<button class="btn btn-secondary task-action-btn" style="margin-left:auto; font-size:10px; padding:2px 6px; opacity:0; transition: opacity 0.2s" onclick="focusTask(\`${text.replace(/`/g, '\\`').replace(/"/g, '&quot;')}\`)">Run</button>`;
-      }
-      
-      html += `
-        <div class="task-item" style="display:flex;align-items:center;gap:8px;margin-left:${marginLeft}px;${style}" onmouseover="const b=this.querySelector('.task-action-btn'); if(b) b.style.opacity=1" onmouseout="const b=this.querySelector('.task-action-btn'); if(b) b.style.opacity=0">
-          ${checkIcon}
-          <span class="task-text" style="flex:1">${escHtml(text)}</span>
-          ${actionBtn}
+    const res = await fetch('/workspace/file/questions').then(r=>r.json());
+    if (res && res.content && res.content.trim().length > 0) {
+      const feed = document.getElementById('feed');
+      const div = document.createElement('div');
+      div.className = `feed-item phase`;
+      div.innerHTML = `
+        <div class="feed-icon" style="background:var(--accent1); color:black">❓</div>
+        <div class="feed-content">
+          <div class="feed-header">
+            <strong>Agents are waiting for your input!</strong>
+          </div>
+          <div class="feed-body" style="background:var(--bg2); padding:16px; border-radius:8px; margin-top:8px; border:1px solid var(--border)">
+            ${marked.parse(res.content)}
+          </div>
         </div>
       `;
+      feed.appendChild(div);
+      feed.scrollTop = feed.scrollHeight;
     }
-  });
-
-  const percent = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-  
-  let headerHtml = '';
-  if (totalTasks > 0) {
-    headerHtml = `
-      <div class="progress-bar-container">
-        <div class="progress-bar-label">
-          <span>Task Progress</span>
-          <span>${completedTasks}/${totalTasks} (${percent}%)</span>
-        </div>
-        <div class="progress-bar-bg">
-          <div class="progress-bar-fill" style="width: ${percent}%"></div>
-        </div>
-      </div>
-    `;
-  }
-
-  if (!html) {
-    container.innerHTML = '<div style="color:var(--muted);font-size:12px">No tasks defined in PLAN.md yet.</div>';
-  } else {
-    container.innerHTML = headerHtml + `<div class="task-items-list" style="display:flex;flex-direction:column;gap:6px;margin-top:10px">${html}</div>`;
+  } catch (err) {
+    console.error("Failed to load interactive questions", err);
   }
 }
-
-window.focusTask = function(taskText) {
-  const steerInput = document.getElementById('steerInput');
-  if (steerInput) {
-    steerInput.value = `Please focus on completing this task from the plan next: "${taskText}"`;
-    if (window.sendSteer) window.sendSteer();
-  }
-};
 
 async function exportContext() {
   try {
