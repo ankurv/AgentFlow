@@ -538,6 +538,14 @@ async def start_run(body: StartBody, state: AppState = Depends(get_state)):
                         state.run_id, "done",
                         [agent.state_dict() for agent in state.orchestrator.agents],
                     )
+                if state.workspace and snapshot:
+                    try:
+                        proj_name = state.workspace.project_root.name or "project"
+                        bundle_path = state.workspace.project_root / f"{proj_name}.md"
+                        bundled = f"# Architecture Design\n\n{snapshot.get('design', '')}\n\n# Implementation Plan\n\n{snapshot.get('plan', '')}"
+                        bundle_path.write_text(bundled)
+                    except Exception:
+                        pass
                 broadcast(Event(kind=EventKind.DONE, data={"workspace": snapshot or {}}), state)
         except asyncio.CancelledError:
             pass
