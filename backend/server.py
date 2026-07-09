@@ -36,9 +36,10 @@ class AppState:
         self.orchestrator: Optional[Orchestrator] = None
         self.workspace: Optional[Workspace] = None
         self.store: Optional[ProjectStore] = None
-        self.event_log: list[dict] = []
+        self.event_log: list[Event] = []
         self.sse_clients: list[asyncio.Queue] = []
         self.run_id: Optional[str] = None
+        self.run_task: Optional[asyncio.Task] = None
         self.status = "idle"
         self.current_idea = ""
 
@@ -55,6 +56,7 @@ class AppState:
         self.event_log.clear()
         self.orchestrator = None
         self.run_id = None
+        self.run_task = None
         self.status = "idle"
         self.current_idea = workspace.brief()
         return workspace
@@ -548,7 +550,7 @@ async def start_run(body: StartBody, state: AppState = Depends(get_state)):
                     [agent.state_dict() for agent in state.orchestrator.agents],
                 )
 
-    asyncio.create_task(run_and_update())
+    state.run_task = asyncio.create_task(run_and_update())
     return {"ok": True, "run_id": state.run_id, "idea_source": "prompt" if body.idea.strip() else "AGENTFLOW.md"}
 
 
@@ -604,6 +606,9 @@ def retry_failed_turn(state: AppState = Depends(get_state)):
 
 @app.post("/run/stop")
 def stop_run(state: AppState = Depends(get_state)):
+    if state.run_task:
+        state.run_task.cancel()
+    
     if state.orchestrator:
         state.orchestrator.stop()
         state.orchestrator.resume()
