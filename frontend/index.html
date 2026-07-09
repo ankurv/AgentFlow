@@ -61,54 +61,66 @@
 
   
   <!-- ── Settings ── -->
-  <div class="panel" id="panel-settings">
+  <div class="panel" id="panel-settings" style="padding: 30px; max-width: 800px; margin: 0 auto; overflow-y: auto; width: 100%;">
     
     <!-- Agent Settings -->
-    <h2 style="color:var(--text);margin-top:0;">Run Settings</h2>
-    <div style="background:var(--surface); padding:20px; border-radius:8px; border:1px solid var(--border); margin-bottom:20px;">
-      <div style="display:flex; flex-direction:column; gap:16px;">
-        <div style="display:flex; align-items:center; justify-content:space-between; max-width:400px;">
-          <span style="font-weight:500;">Max Tokens:</span>
-          <div style="display:flex; gap:8px;">
-            <input type="text" id="maxTokensInput" value="100000" style="width: 100px; padding: 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text);">
-            <button class="btn btn-secondary" onclick="updateTokens()">Save</button>
-          </div>
+    <h2 style="color:var(--text); margin-top:0; font-family:var(--heading-font); font-weight:600; margin-bottom:16px;">Run Settings</h2>
+    <div style="background:var(--bg2); padding:24px; border-radius:var(--radius); border:1px solid var(--border); margin-bottom:32px; display:flex; flex-direction:column; gap:20px;">
+      
+      <div style="display:flex; align-items:center; justify-content:space-between;">
+        <div style="display:flex; flex-direction:column; gap:4px;">
+          <span style="font-weight:600; font-size:14px; color:var(--text);">Max Tokens</span>
+          <span style="font-size:12px; color:var(--muted);">Set the maximum token limit per run</span>
         </div>
-        <div style="display:flex; align-items:center; justify-content:space-between; max-width:400px;">
-          <span style="font-weight:500;">Debate Level: <span id="debateLevelLabel" style="color:var(--accent2); font-weight:bold; margin-left:6px;">3</span></span>
-          <input type="range" id="debateRoundsSlider" min="1" max="10" value="3" oninput="document.getElementById('debateLevelLabel').innerText=this.value" style="width: 155px; accent-color: var(--accent);">
+        <div style="display:flex; gap:12px; align-items:center;">
+          <input type="text" id="maxTokensInput" value="100000" style="width:120px; padding:8px 12px; border:1px solid var(--border); border-radius:var(--radius); background:var(--bg); color:var(--text); font-family:var(--mono); text-align:right;">
+          <button class="btn btn-secondary" onclick="updateTokens()" style="padding:8px 16px;">Save</button>
+        </div>
+      </div>
+      
+      <div style="height:1px; background:var(--border); width:100%;"></div>
+
+      <div style="display:flex; align-items:center; justify-content:space-between;">
+        <div style="display:flex; flex-direction:column; gap:4px;">
+          <span style="font-weight:600; font-size:14px; color:var(--text);">Debate Level: <span id="debateLevelLabel" style="color:var(--accent2); font-weight:bold; margin-left:6px;">3</span></span>
+          <span style="font-size:12px; color:var(--muted);">Adjust the intensity and round count for agent debates</span>
+        </div>
+        <div style="display:flex; align-items:center; width: 200px;">
+          <input type="range" id="debateRoundsSlider" min="1" max="10" value="3" oninput="document.getElementById('debateLevelLabel').innerText=this.value" style="width:100%; accent-color:var(--accent); cursor:pointer;">
         </div>
       </div>
     </div>
 
-    <h2 style="color:var(--text);margin-top:20px;">User Management</h2>
-    <div style="background:var(--surface); padding:20px; border-radius:8px; border:1px solid var(--border); margin-bottom:20px;">
-      <h3 style="margin-top:0;">Change My Password</h3>
-      <div style="display:flex; gap:10px; margin-top:10px;">
-        <input type="password" id="newPassword" placeholder="New Password" style="flex:1; padding:8px; border-radius:4px; border:1px solid var(--border); background:var(--bg); color:var(--text);">
-        <button class="btn btn-primary" onclick="changeMyPassword()">Update Password</button>
+    <h2 style="color:var(--text); margin-top:0; font-family:var(--heading-font); font-weight:600; margin-bottom:16px;">User Management</h2>
+    
+    <div style="background:var(--bg2); padding:24px; border-radius:var(--radius); border:1px solid var(--border); margin-bottom:32px;">
+      <h3 style="margin-top:0; font-size:15px; margin-bottom:16px;">Change My Password</h3>
+      <div style="display:flex; gap:12px; align-items:center;">
+        <input type="password" id="newPassword" placeholder="Enter new password" style="flex:1; max-width:300px; padding:10px 14px; border-radius:var(--radius); border:1px solid var(--border); background:var(--bg); color:var(--text);">
+        <button class="btn btn-secondary" onclick="changeMyPassword()" style="padding:10px 20px;">Update Password</button>
       </div>
     </div>
     
-    <div id="adminSettingsBlock" style="display:none; background:var(--surface); padding:20px; border-radius:8px; border:1px solid var(--border);">
-      <h3 style="margin-top:0;">Team Members (Admin)</h3>
-      <table id="usersTable" style="width:100%; border-collapse:collapse; margin-bottom:20px; text-align:left;">
-        <thead>
-          <tr style="border-bottom:1px solid var(--border);">
-            <th style="padding:10px;">Username</th>
-            <th style="padding:10px;">Role</th>
-            <th style="padding:10px;">Action</th>
-          </tr>
-        </thead>
-        <tbody id="usersTableBody"></tbody>
-      </table>
+    <div id="adminSettingsBlock" style="display:none; background:var(--bg2); padding:24px; border-radius:var(--radius); border:1px solid var(--border);">
+      <h3 style="margin-top:0; font-size:15px; margin-bottom:16px;">Team Members (Admin)</h3>
+      <div style="background:var(--bg); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; margin-bottom:24px;">
+        <table id="usersTable" style="width:100%; border-collapse:collapse; text-align:left; font-size:13px;">
+          <thead>
+            <tr style="background:rgba(255,255,255,0.02); border-bottom:1px solid var(--border);">
+              <th style="padding:12px 16px; font-weight:600; color:var(--muted);">Username</th>
+              <th style="padding:12px 16px; font-weight:600; color:var(--muted);">Role</th>
+              <th style="padding:12px 16px; font-weight:600; color:var(--muted); text-align:right;">Action</th>
+            </tr>
+          </thead>
+          <tbody id="usersTableBody"></tbody>
+        </table>
+      </div>
       
-      <h4>Add New User</h4>
-      <div style="display:flex; gap:10px; margin-top:10px;">
-        <input type="text" id="newUsername" placeholder="Username" style="flex:1; padding:8px; border-radius:4px; border:1px solid var(--border); background:var(--bg); color:var(--text);">
-        <input type="password" id="newUserPassword" placeholder="Password" style="flex:1; padding:8px; border-radius:4px; border:1px solid var(--border); background:var(--bg); color:var(--text);">
-
-        <button class="btn btn-primary" onclick="addUser()">Create User</button>
+      <h4 style="margin-top:0; margin-bottom:12px; font-size:14px;">Add New User</h4>
+      <div style="display:flex; gap:12px; align-items:center;">
+        <input type="text" id="newUsername" placeholder="Username" style="flex:1; max-width:200px; padding:10px 14px; border-radius:var(--radius); border:1px solid var(--border); background:var(--bg); color:var(--text);">
+        <input type="password" id="newUserPassword" placeholder="Password" style="flex:1; max-width:200px; padding:10px 14px; border-radius:var(--radius); border:1px solid var(--border); background:var(--bg); color:var(--text);">
+        <button class="btn btn-primary" onclick="addUser()" style="padding:10px 20px;">Create User</button>
       </div>
     </div>
   </div>
