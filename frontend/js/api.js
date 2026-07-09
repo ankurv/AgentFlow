@@ -431,16 +431,28 @@ function updateStatus(s) {
 
   const steerInput = document.getElementById('steerInput');
   const sendBtn = document.getElementById('sendBtn');
-  if (steerInput) {
-    if (s === 'idle' || s === 'done' || s === 'error') {
-      steerInput.placeholder = 'Type a prompt/task here and press Enter to start the run…';
-      if (sendBtn) sendBtn.textContent = 'Start Run';
-    } else if (s === 'paused' || s === 'waiting_for_continuation') {
-      steerInput.placeholder = 'Optional steering message... or just press Enter to Resume';
-      if (sendBtn) sendBtn.textContent = 'Resume Run';
-    } else {
-      steerInput.placeholder = 'Steer agents — inject a message into the active run…';
-      if (sendBtn) sendBtn.textContent = 'Steer';
+  const nameEl = document.getElementById('contextAgentName');
+  const instEl = document.getElementById('contextAgentInstructions');
+  const stEl = document.getElementById('contextAgentStatus');
+
+  if (s === 'idle' || s === 'done' || s === 'error') {
+    if (nameEl) nameEl.textContent = 'Ready to start';
+    if (instEl) instEl.textContent = 'Type a high-level feature request below to start the design process.';
+    if (stEl) stEl.className = 'status-indicator idle';
+    
+    if (steerInput) steerInput.placeholder = 'Type a prompt/task here and press Enter to start the run…';
+    if (sendBtn) sendBtn.textContent = 'Start Run';
+  } else {
+    if (stEl) stEl.className = 'status-indicator running';
+    
+    if (steerInput) {
+      if (s === 'paused' || s === 'waiting_for_continuation') {
+        steerInput.placeholder = 'Optional steering message... or just press Enter to Resume';
+        if (sendBtn) sendBtn.textContent = 'Resume Run';
+      } else {
+        steerInput.placeholder = 'Steer agents — inject a message into the active run…';
+        if (sendBtn) sendBtn.textContent = 'Steer';
+      }
     }
   }
 
