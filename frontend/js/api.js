@@ -577,9 +577,10 @@ async function exportContext() {
     const wsData = wsRes.ok ? await wsRes.json() : {root: 'project'};
     
     let projName = "project";
-    if (wsData.root) {
-        const parts = wsData.root.split('/');
-        projName = parts[parts.length - 1];
+    const pathStr = wsData.project_path || wsData.root;
+    if (pathStr) {
+        const parts = pathStr.split(/[/\\]/);
+        projName = parts[parts.length - 1] || "project";
     }
     
     const bundled = `# Architecture Design\n\n${designData.content}\n\n# Implementation Plan\n\n${planData.content}`;
