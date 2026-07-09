@@ -242,10 +242,33 @@ async function loadWsFile(key) {
 
 async function refreshWorkspace() {
   const ws = await fetch('/workspace').then(r=>r.json());
+  
+  // Update sidebar buttons based on whether core files exist
+  const coreFiles = ['design', 'plan', 'consensus', 'questions', 'tests', 'logbook'];
+  coreFiles.forEach(key => {
+    const btn = document.getElementById(`wsbtn-${key}`);
+    if (btn) {
+      if (ws[key] === '(empty)' || !ws[key]) {
+        btn.style.opacity = '0.4';
+        btn.style.pointerEvents = 'none'; // Disable click
+      } else {
+        btn.style.opacity = '1';
+        btn.style.pointerEvents = 'auto'; // Enable click
+      }
+    }
+  });
+  
   const srcList = document.getElementById('srcFileList');
   srcList.innerHTML = (ws.src_files||[]).map(f =>
     `<button class="ws-file-btn" onclick="loadWsFile(decodeURIComponent('${encodeURIComponent(f)}'))">${getFileIcon(f)} ${escHtml(f)}</button>`
   ).join('');
+  
+  // Only load if the current key exists or is dashboard
+  if (currentWsKey !== 'dashboard' && coreFiles.includes(currentWsKey)) {
+    if (ws[currentWsKey] === '(empty)' || !ws[currentWsKey]) {
+      currentWsKey = 'dashboard';
+    }
+  }
   await loadWsFile(currentWsKey);
 }
 

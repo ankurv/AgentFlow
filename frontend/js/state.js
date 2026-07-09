@@ -174,8 +174,9 @@ async function loadPresetTeam() {
 }
 
 async function openProject() {
-  const path = document.getElementById('projectPath').value.trim();
-  if (!path) { notify('Enter an absolute project folder', true); return false; }
+  const path = prompt("Enter the absolute path to your project folder:", currentProjectPath || "");
+  if (!path) return false;
+  
   const response = await fetch('/project/open', {
     method: 'POST', headers: {'Content-Type':'application/json'},
     body: JSON.stringify({path})
@@ -184,19 +185,28 @@ async function openProject() {
   if (!response.ok) { notify(data.detail || 'Could not open project', true); return false; }
   projectOpen = true;
   currentProjectPath = data.path;
-  document.getElementById('projectPath').value = data.path;
+  
   if (data.settings && data.settings.max_tokens) {
     const el = document.getElementById('maxTokensInput');
     if (el) el.value = data.settings.max_tokens;
     maxTokens = data.settings.max_tokens;
   }
-  document.getElementById('projectState').textContent = 'Ready · project state loaded';
+  
+  // Extract project name from path
+  const parts = data.path.split('/');
+  const projName = parts[parts.length - 1];
+  
+  document.getElementById('projectState').textContent = projName;
   document.getElementById('projectState').className = 'project-state ready';
   currentWsKey = 'dashboard';
   await loadAgentConfig();
   renderHistory(data.recent_runs || []);
   await fetchAgentStatus();
   notify(data.brief ? 'Project opened · AGENTFLOW.md loaded' : 'Project opened');
+  
+  // Refresh workspace to load files
+  if (typeof refreshWorkspace === 'function') refreshWorkspace();
+  
   return true;
 }
 
@@ -205,13 +215,17 @@ async function loadCurrentProject() {
   if (!data.open) return;
   projectOpen = true;
   currentProjectPath = data.path;
-  document.getElementById('projectPath').value = data.path;
+  
   if (data.settings && data.settings.max_tokens) {
     const el = document.getElementById('maxTokensInput');
     if (el) el.value = data.settings.max_tokens;
     maxTokens = data.settings.max_tokens;
   }
-  document.getElementById('projectState').textContent = 'Ready · project state loaded';
+  
+  const parts = data.path.split('/');
+  const projName = parts[parts.length - 1];
+  
+  document.getElementById('projectState').textContent = projName;
   document.getElementById('projectState').className = 'project-state ready';
   renderHistory(data.recent_runs || []);
   await loadAgentConfig();

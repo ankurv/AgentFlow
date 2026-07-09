@@ -99,6 +99,10 @@ function handleEvent(ev) {
   if (ev.kind === 'turn_start' || ev.kind === 'turn_end' || ev.kind === 'retry' || ev.kind === 'error') {
     fetchAgentStatus();
   }
+  
+  if (ev.kind === 'turn_end' && typeof refreshWorkspace === 'function') {
+    refreshWorkspace();
+  }
 }
 
 function appendFeed(ev) {
@@ -418,7 +422,7 @@ function updateStatus(s) {
   }
 
   const running = s === 'running' || s === 'paused' || s === 'needs_attention';
-  retryBtn.style.display = s === 'needs_attention' ? '' : 'none';
+  if (retryBtn) retryBtn.style.display = s === 'needs_attention' ? '' : 'none';
   if (pauseBtn) {
     pauseBtn.style.display = (s === 'running' || s === 'paused') ? '' : 'none';
     pauseBtn.textContent = s === 'paused' ? 'Resume' : 'Pause';
@@ -428,7 +432,7 @@ function updateStatus(s) {
   }
   const resetBtn = document.getElementById('resetBtn');
   if (resetBtn) {
-    resetBtn.style.display = (s === 'idle' || s === 'done' || s === 'error') ? '' : 'none';
+    resetBtn.style.display = (s === 'done' || s === 'error') ? '' : 'none';
   }
 }
 
