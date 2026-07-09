@@ -996,6 +996,9 @@ class Orchestrator:
             if verdict == "CONTINUE":
                 verdict = "PAUSE_FOR_INPUT"
 
+        if next_agent.upper() == "USER" and verdict == "CONTINUE":
+            verdict = "PAUSE_FOR_INPUT"
+
         if verdict == "CONTINUE" and not next_agent:
             raise RuntimeError("Coordinator must provide NEXT_AGENT when continuing.")
         if verdict == "CONTINUE" and not instructions:
