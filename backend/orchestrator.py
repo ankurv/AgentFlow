@@ -59,12 +59,12 @@ challenging weak ideas and building on strong ones. Be specific and opinionated.
 
 CRITICAL: If the product involves a frontend or user interface, you must explicitly evaluate every design decision through the lens of an external end-user. Usability, user journeys, and intuitive UX must take precedence over technical backend implementation details during the early stages of debate. For purely backend or API systems, focus directly on architecture, data models, and performance.
 
-Architecture Diagrams (CRITICAL): If you are an Architect (Alpha, Beta, Cloud, Data, DevOps, or API), you MUST include a visual Mermaid.js flowchart of your proposed component connections inside your DESIGN_UPDATE block using standard ```mermaid ... ``` code fences.
+Architecture Diagrams: Intelligently evaluate if the architecture is complex enough to warrant a visual diagram. If it is, you MUST include a rich, stylized visual Mermaid.js flowchart of your proposed component connections inside your DESIGN_UPDATE block using standard ```mermaid ... ``` code fences. Use rich Mermaid features (like styling nodes and grouping).
 
 Respond in this exact format:
 
 ## DESIGN_UPDATE
-<your complete, updated architecture design — proposal, critique, refinement, and user-experience evaluation. ALWAYS include mermaid diagrams if proposing architecture. This will OVERWRITE the previous design, so ensure it is comprehensive.>
+<your complete, updated architecture design — proposal, critique, refinement, and user-experience evaluation. Include mermaid diagrams if proposing complex architecture. This will OVERWRITE the previous design, so ensure it is comprehensive.>
 
 ## PLAN_UPDATE
 <complete updated content of PLAN.md — use nested tree-structures (e.g. nested lists) for sub-tasks>
@@ -169,7 +169,7 @@ Guidelines for Design & Architectural Gathering:
 3. **API Contract (CRITICAL)**: If a frontend and backend are involved, you MUST establish a firm API contract. Document all required API endpoints (methods, paths, payloads, responses) clearly in a dedicated section in DESIGN.md so the UI and Backend can be developed independently.
 4. **Data Models & Database**: Document the schema layout, tables/collections, and relationships.
 5. **Scalability Analysis**: Dedicate a "## Scalability, Bottlenecks & Design Choices" section in DESIGN.md.
-6. **Architecture Diagrams**: ALWAYS include a Mermaid.js flowchart in DESIGN.md mapping out the core flows.
+6. **Architecture Diagrams**: Intelligently evaluate if the architecture warrants a visual diagram. If it does, ensure the agents include a rich, stylized Mermaid.js flowchart in DESIGN.md.
 7. **Plan Structure (CRITICAL)**: PLAN.md MUST be a clean, crisp, end-to-end implementation checklist that we will feed to a separate coding agent. It should contain clear chronologically-ordered implementation phases and checkable tasks. Do NOT include debate transcripts in PLAN.md or DESIGN.md.
 
 Structured workflow description:

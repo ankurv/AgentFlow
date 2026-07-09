@@ -25,7 +25,7 @@
   }
   
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: var(--font);
+  body { background: radial-gradient(circle at top right, #11152d 0%, var(--bg) 100%); color: var(--text); font-family: var(--font);
          font-size: 14px; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
 
   /* ── Intro Banner ── */
@@ -43,8 +43,8 @@
   /* ── Header ── */
   header { display: flex; align-items: center; gap: 12px; padding: 0 24px;
            height: 60px; border-bottom: 1px solid var(--border); flex-shrink: 0;
-           background: rgba(11, 14, 26, 0.85); backdrop-filter: blur(12px); }
-  .logo { font-family: var(--heading-font); font-size: 20px; font-weight: 800; letter-spacing: -0.5px; color: #a5b4fc; }
+           background: rgba(11, 14, 26, 0.6); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); z-index: 10; }
+  .logo { font-family: var(--heading-font); font-size: 20px; font-weight: 800; letter-spacing: -0.5px; color: #a5b4fc; text-shadow: 0 0 20px rgba(165,180,252,0.2); }
   .logo span { color: var(--muted); font-weight: 400; }
   .status-pill { display: flex; align-items: center; gap: 6px; padding: 4px 12px;
                  border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid var(--border2);
@@ -58,7 +58,7 @@
   header .spacer { flex: 1; }
   
   .project-strip { min-height: 64px; padding: 12px 24px; display: flex; align-items: center;
-                   gap: 12px; border-bottom: 1px solid var(--border); background: var(--bg2); }
+                   gap: 12px; border-bottom: 1px solid var(--border); background: rgba(11, 14, 26, 0.4); backdrop-filter: blur(10px); }
   .project-strip .project-label { font-family: var(--heading-font); font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase;
                                   letter-spacing: .08em; white-space: nowrap; }
   .project-path { flex: 1; max-width: 640px; font-family: var(--mono); background: rgba(255, 255, 255, 0.02) !important;
@@ -69,17 +69,17 @@
   
   .header-btn { background: var(--bg3); border: 1px solid var(--border2); color: var(--text);
                 padding: 6px 14px; border-radius: var(--radius); cursor: pointer; font-size: 12px; font-weight: 600;
-                transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
-  .header-btn:hover { border-color: var(--accent); color: var(--accent2); background: rgba(99,102,241,0.05); }
-  .header-btn.danger:hover { border-color: var(--red); color: var(--red); background: rgba(239,68,68,0.05); }
+                transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+  .header-btn:hover { border-color: var(--accent); color: var(--accent2); background: rgba(99,102,241,0.1); transform: translateY(-1px); box-shadow: 0 4px 10px rgba(79, 70, 229, 0.15); }
+  .header-btn.danger:hover { border-color: var(--red); color: var(--red); background: rgba(239,68,68,0.1); transform: translateY(-1px); box-shadow: 0 4px 10px rgba(239, 68, 68, 0.15); }
 
   /* ── Tab nav ── */
   nav { display: flex; gap: 8px; padding: 12px 24px; border-bottom: 1px solid var(--border);
-        flex-shrink: 0; background: var(--bg2); align-items: center; }
+        flex-shrink: 0; background: rgba(11, 14, 26, 0.4); backdrop-filter: blur(10px); align-items: center; }
   .tab { padding: 8px 16px; font-family: var(--heading-font); font-size: 13.5px; font-weight: 600; color: var(--muted); cursor: pointer;
          border-radius: 20px; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); background: transparent; }
-  .tab:hover { color: var(--text); background: rgba(255, 255, 255, 0.03); }
-  .tab.active { color: #fff; background: var(--accent); box-shadow: 0 4px 14px var(--accent-glow); }
+  .tab:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); transform: translateY(-1px); }
+  .tab.active { color: #fff; background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%); box-shadow: 0 4px 14px var(--accent-glow); }
 
   /* ── Layout ── */
   .main { display: flex; flex: 1; overflow: hidden; }
@@ -89,15 +89,15 @@
   /* ── Chat panel ── */
   .chat-layout { display: flex; flex: 1; overflow: hidden; }
   .chat-sidebar { width: 340px; border-right: 1px solid var(--border); display: flex;
-                  flex-direction: column; flex-shrink: 0; background: var(--bg2); }
+                  flex-direction: column; flex-shrink: 0; background: rgba(11, 14, 26, 0.3); backdrop-filter: blur(8px); }
   .sidebar-section { padding: 16px; border-bottom: 1px solid var(--border); }
   .sidebar-label { font-family: var(--heading-font); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
                    color: var(--muted); margin-bottom: 12px; }
   
   .agent-chip { display: flex; align-items: center; gap: 10px; padding: 12px 14px;
                 border-radius: var(--radius); margin-bottom: 6px; background: rgba(255, 255, 255, 0.02);
-                border: 1px solid var(--border); transition: all 0.2s; }
-  .agent-chip:hover { border-color: var(--border2); background: rgba(255, 255, 255, 0.04); }
+                border: 1px solid var(--border); transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); cursor: pointer; }
+  .agent-chip:hover { border-color: rgba(255,255,255,0.15); background: rgba(255, 255, 255, 0.04); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
   .agent-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
   .agent-chip .aname { font-size: 13px; font-weight: 600; flex: 1; }
   .agent-chip .akind { font-size: 11px; color: var(--muted); background: rgba(255,255,255,0.05); padding: 1px 6px; border-radius: 10px; }
