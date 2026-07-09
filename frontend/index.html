@@ -239,16 +239,24 @@
     <div class="config-layout">
       <!-- MCP Servers -->
       <div id="mcpConfigSection">
-        <h2>MCP Servers (Local Tools)</h2>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
+          <h2 style="margin:0;">MCP Servers (Local Tools)</h2>
+          <button class="btn btn-primary" onclick="document.getElementById('mcpAddForm').style.display='flex'" style="font-size:12px; padding:6px 12px">＋ Add Server</button>
+        </div>
         <p class="muted-note" style="margin-bottom:16px;">Configure Model Context Protocol (MCP) servers to give agents access to external tools. Servers configured here will be available to Claude agents in this project.</p>
+        
         <div id="mcpList" style="display:flex; flex-direction:column; gap:12px; margin-bottom:16px;"></div>
-        <div style="display:flex; flex-direction:column; gap:8px; background:var(--bg2); padding:16px; border-radius:var(--radius); border:1px solid var(--border)">
-          <div style="font-size:13px; font-weight:600;">Add New MCP Server</div>
+        
+        <div id="mcpAddForm" style="display:none; flex-direction:column; gap:8px; background:var(--bg2); padding:16px; border-radius:var(--radius); border:1px solid var(--border)">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="font-size:13px; font-weight:600;">Add New MCP Server</div>
+            <button class="btn btn-secondary" style="padding:4px 8px; font-size:11px" onclick="document.getElementById('mcpAddForm').style.display='none'">Cancel</button>
+          </div>
           <input type="text" id="mcpName" placeholder="Name (e.g. filesystem)" class="input-modern" style="width:100%">
           <input type="text" id="mcpCommand" placeholder="Command or SSE URL (e.g. npx or http://localhost:8000/sse)" class="input-modern" style="width:100%">
           <input type="text" id="mcpArgs" placeholder="Arguments (comma separated, e.g. -y,@modelcontextprotocol/server-filesystem,/Users)" class="input-modern" style="width:100%">
           <input type="text" id="mcpEnv" placeholder="Env Vars (key=value,key2=value2)" class="input-modern" style="width:100%">
-          <button class="btn btn-primary" style="align-self:flex-start;" onclick="addMCPServer()">Add Server</button>
+          <button class="btn btn-primary" style="align-self:flex-start;" onclick="addMCPServer()">Save Server</button>
         </div>
       </div>
     </div>

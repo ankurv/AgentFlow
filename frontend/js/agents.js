@@ -499,6 +499,8 @@ async function addMCPServer() {
     document.getElementById('mcpCommand').value = '';
     document.getElementById('mcpArgs').value = '';
     document.getElementById('mcpEnv').value = '';
+    const form = document.getElementById('mcpAddForm');
+    if (form) form.style.display = 'none';
     notify('MCP server added');
     loadMCPServers();
   } else {
