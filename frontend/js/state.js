@@ -1,5 +1,4 @@
 // ── State ───────────────────────────────────────────────────────────────────
-const agentColors = {};
 let appStatus = null;
 let totalTokens = 0;
 let totalCost = 0;
