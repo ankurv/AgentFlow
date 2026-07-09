@@ -249,11 +249,9 @@ async function refreshWorkspace() {
     const btn = document.getElementById(`wsbtn-${key}`);
     if (btn) {
       if (ws[key] === '(empty)' || !ws[key]) {
-        btn.style.opacity = '0.4';
-        btn.style.pointerEvents = 'none'; // Disable click
+        btn.style.display = 'none';
       } else {
-        btn.style.opacity = '1';
-        btn.style.pointerEvents = 'auto'; // Enable click
+        btn.style.display = 'flex';
       }
     }
   });
