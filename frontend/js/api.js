@@ -268,15 +268,6 @@ async function startRun(prompt) {
   });
   // Default to debate, but allow the user to override via prompt if they explicitly ask to build
   let mode = "debate";
-  const ideaLower = idea.toLowerCase();
-  
-  if (ideaLower.includes("build only") || ideaLower.includes("implement only")) {
-    mode = "build";
-  } else if (ideaLower.includes("build") && ideaLower.includes("debate")) {
-    mode = "all";
-  } else if (ideaLower.includes("build") && !ideaLower.includes("debate")) {
-    mode = "build";
-  }
   totalTokens = 0;
   totalCost = 0;
   eventCount = 0;
@@ -551,10 +542,28 @@ async function exportContext() {
     const planData = planRes.ok ? await planRes.json() : {content: 'No PLAN.md found.'};
     const designRes = await fetch('/workspace/file/design');
     const designData = designRes.ok ? await designRes.json() : {content: 'No DESIGN.md found.'};
+    const wsRes = await fetch('/workspace');
+    const wsData = wsRes.ok ? await wsRes.json() : {root: 'project'};
+    
+    let projName = "project";
+    if (wsData.root) {
+        const parts = wsData.root.split('/');
+        projName = parts[parts.length - 1];
+    }
     
     const bundled = `# Architecture Design\n\n${designData.content}\n\n# Implementation Plan\n\n${planData.content}`;
-    await navigator.clipboard.writeText(bundled);
-    alert('DESIGN.md and PLAN.md bundled and copied to clipboard! Ready to paste into Claude/Codex.');
+    
+    const blob = new Blob([bundled], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${projName}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    alert(`DESIGN.md and PLAN.md bundled and downloaded as ${projName}.md!`);
   } catch (e) {
     alert('Failed to export context: ' + e.message);
   }

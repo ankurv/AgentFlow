@@ -131,17 +131,18 @@ FAIL
 }
 
 ROLE_NEEDS = {
-    "developer": ["plan", "src"],
-    "reviewer":  ["design", "src"],
-    "tester":    ["plan", "src", "tests"],
+    "architect_alpha": ["design", "plan"],
+    "architect_beta": ["design", "plan"],
+    "ux_simplifier": ["design", "plan"],
+    "product_manager": ["design", "plan"],
+    "data_architect": ["design", "plan"],
+    "security_auditor": ["design", "plan"],
+    "api_designer": ["design", "plan"],
 }
 
 SPECIALIZED_PERSONAS = {
     "architect_alpha": "You are ARCHITECT ALPHA. Propose robust, scalable system designs. Vigorously debate competing designs and highlight their flaws while defending your own.",
     "architect_beta": "You are ARCHITECT BETA. Propose alternative, highly-optimized system designs. Challenge Architect Alpha's assumptions and fight for a superior approach.",
-    "developer": "You are the DEVELOPER. Focus on concrete implementation logic and code structures.",
-    "reviewer": "You are the REVIEWER. Focus on code quality, correctness, and catching logical flaws.",
-    "tester": "You are the TESTER. Focus on test planning, execution, and identifying unhandled edge cases.",
     "researcher": "You are the RESEARCHER. Read existing workspace files to ground the debate in reality. Fact-check the Architects to ensure they do not hallucinate APIs or codebase assumptions.",
     "red_team": "You are the RED TEAM agent. Your sole purpose is to hunt for edge-cases, race conditions, security vulnerabilities, and ways to break the proposed design.",
     "ux_simplifier": "You are the UX SIMPLIFIER. You fiercely advocate for the external user. You must aggressively fight to simplify complex UI flows, remove unnecessary features, and ensure the system is intuitive.",
@@ -157,28 +158,23 @@ SPECIALIZED_PERSONAS = {
     "marketing_beta": "You are MARKETING EXPERT BETA. Focus on long-term SEO, content marketing, and community building. Challenge Marketing Alpha's short-term strategies and fight for a superior approach."
 }
 
-COORDINATOR_SYSTEM = """You are the COORDINATOR of an autonomous software engineering team.
-Your goal is to coordinate the team's agents to design, build, review, and test a software product based on the user's idea.
+COORDINATOR_SYSTEM = """You are the COORDINATOR of an autonomous software architecture and design team.
+Your SOLE goal is to coordinate the team's agents to architect a system and produce a comprehensive DESIGN.md and a crisp, end-to-end PLAN.md implementation checklist based on the user's idea. 
+CRITICAL: You MUST NOT write any executable code (e.g. .py, .js, .html). Your output will be fed to a separate coding agent.
 Your debate depth limit is: {max_debate_rounds} rounds.
 
-Current execution mode: {mode}
-
 Guidelines for Design & Architectural Gathering:
-1. **Context-Aware Usability First**: IF the project involves a user interface, frontend, or human interaction, you MUST explicitly map out the user journey, UI flows, and UX interactions before diving into backend architectures. Prioritize summoning UI_DESIGNER or PRODUCT_MANAGER early in these cases. If the project is purely backend, CLI, or API-driven, skip UI/UX design and focus directly on architecture and data models.
+1. **Context-Aware Usability First**: IF the project involves a user interface, frontend, or human interaction, you MUST explicitly map out the user journey, UI flows, and UX interactions before diving into backend architectures. Prioritize summoning ux_simplifier or product_manager early in these cases. If the project is purely backend, CLI, or API-driven, skip UI/UX design and focus directly on architecture and data models.
 2. **User-Centric Simplification**: Evaluate all designs from an external user's perspective. Simplify complex UI/UX.
 3. **API Contract (CRITICAL)**: If a frontend and backend are involved, you MUST establish a firm API contract. Document all required API endpoints (methods, paths, payloads, responses) clearly in a dedicated section in DESIGN.md so the UI and Backend can be developed independently.
-4. **Test Planning**: If the project requires testing (or is complex enough to warrant it), summon the TEST_PLANNER to generate a comprehensive testing strategy in TESTS.md.
+4. **Data Models & Database**: Document the schema layout, tables/collections, and relationships.
 5. **Scalability Analysis**: Dedicate a "## Scalability, Bottlenecks & Design Choices" section in DESIGN.md.
-6. **Architecture Diagrams**: ALWAYS include a Mermaid.js flowchart in DESIGN.md.
-7. **Plan Structure (CRITICAL)**: PLAN.md MUST be a clean package covering EXACTLY these headers: Requirements, Non-Goals, Assumptions, Alternatives, Decisions, Risks, Acceptance Criteria, and Implementation Phases. Do NOT include debate transcripts in PLAN.md or DESIGN.md.
+6. **Architecture Diagrams**: ALWAYS include a Mermaid.js flowchart in DESIGN.md mapping out the core flows.
+7. **Plan Structure (CRITICAL)**: PLAN.md MUST be a clean, crisp, end-to-end implementation checklist that we will feed to a separate coding agent. It should contain clear chronologically-ordered implementation phases and checkable tasks. Do NOT include debate transcripts in PLAN.md or DESIGN.md.
 
 Structured workflow description:
-1. **Phase 1 (High-Level Planning & Design)**:
-   - **Dynamic Summoning (Strict Needs-Based)**: You have access to a large pool of specialized experts. You MUST selectively summon them by setting ## NEXT_AGENT ONLY if their specific expertise is strictly required by the project scope. Do not summon UI agents for backend projects, or database architects for static sites, etc. If multiple competing roles are available for a required domain, force them to rigorously debate trade-offs.
-2. **Phase 2 (Deep-Dive Implementation Planning / Execution)**:
-   - For EACH task in PLAN.md, force agents to debate implementation.
-   - **Debate Limits (CRITICAL)**: Do NOT debate a single sub-item for more than {max_debate_rounds} turns. Force a decision.
-   - If mode is 'debate', skip execution and finalize the tree plan.
+1. **Dynamic Summoning (Strict Needs-Based)**: You have access to a large pool of specialized experts. You MUST selectively summon them by setting ## NEXT_AGENT ONLY if their specific expertise is strictly required by the project scope. Do not summon UI agents for backend projects, or database architects for static sites, etc. If multiple competing roles are available for a required domain, force them to rigorously debate trade-offs.
+2. **Debate Limits (CRITICAL)**: Do NOT debate a single sub-item for more than {max_debate_rounds} turns. Force a decision and consolidate the architecture into DESIGN.md and PLAN.md.
 
 Available agents in the virtual company pool:
 {agents_list}
@@ -196,9 +192,6 @@ You may optionally update workspace files directly by including these exact head
 
 ## QUESTIONS
 <if you need clarification from the user, write your questions here>
-
-## FILE: path/to/file.ext
-<complete file content>
 
 Respond in this EXACT format:
 
@@ -446,10 +439,6 @@ class Orchestrator:
 
                 break
 
-        # If mode is "all" or "build", run build phase
-        if self._running and self.mode in {"all", "build"}:
-            await self._build_phase()
-            
         return self.ws.snapshot()
 
     # ── Debate phase ──────────────────────────────────────────────────────────
@@ -553,112 +542,7 @@ class Orchestrator:
         if consensus_bit:
             self.ws.append("consensus", consensus_bit, agent, f"Round {round_num}")
 
-    # ── Build phase ───────────────────────────────────────────────────────────
 
-    async def _build_phase(self):
-        self._emit(Event(EventKind.PHASE, data={"phase": "build"}))
-        n = len(self.agents)
-
-        for iteration in range(1, self.max_build_iterations + 1):
-            await self._wait_if_paused()
-            if not self._running:
-                return
-
-            # Rotate roles
-            shifted = self.agents[iteration % n:] + self.agents[:iteration % n]
-            roles = {
-                "developer": shifted[0],
-                "reviewer":  shifted[1 % n],
-                "tester":    shifted[2 % n],
-            }
-            self._emit(Event(EventKind.PHASE, data={
-                "phase": "build", "iteration": iteration,
-                "roles": {r: a.name for r, a in roles.items()},
-            }))
-
-            verdicts: dict[str, str] = {}
-            steering_accumulated = ""
-
-            for role, agent in roles.items():
-                await self._wait_if_paused()
-                if not self._running:
-                    return
-                new_steering = await self._drain_steer()
-                if new_steering:
-                    if steering_accumulated:
-                        steering_accumulated += "\n" + new_steering
-                    else:
-                        steering_accumulated = new_steering
-
-                full_ctx = self.ws.full_context()
-                steer_block = f"\n\n[HUMAN STEERING]\n{steering_accumulated}" if steering_accumulated else ""
-                prompt = (
-                    "Debate is complete; continue in the BUILD phase.\n"
-                    f"Build iteration {iteration}. Your role: {role.upper()}.\n\n"
-                    f"Current Workspace snapshot:\n{full_ctx}{steer_block}\n\n"
-                    f"{BUILD_SYSTEMS[role]}"
-                )
-
-                turn_context = {"iteration": iteration, "role": role, "phase": "build",
-                                "standing_role": agent.config.role}
-                turn_id = self._begin_turn(agent, turn_context)
-
-                response = await self._send_agent(agent, prompt, turn_id, turn_context)
-                self._record_turn_usage(agent)
-
-                verdict = self._apply_build_response(agent.name, role, iteration, response)
-                verdicts[role] = verdict
-
-                self.ws.append("logbook", response, agent.name, "Turn completed")
-                self._emit(Event(EventKind.TURN_END, agent=agent.name, data={
-                    "turn_id": turn_id, "attempt": self._turn_attempts[turn_id],
-                    "iteration": iteration, "role": role,
-                    "response": response,
-                    **self._usage_event(agent),
-                }))
-                if await self._enforce_token_budget("build", {"iteration": iteration, "role": role, "agent": agent.name}):
-                    return
-                self._emit(Event(EventKind.VERDICT, agent=agent.name,
-                                 data={"role": role, "verdict": verdict, "iteration": iteration}))
-
-            if verdicts.get("reviewer") == "APPROVE" and verdicts.get("tester") == "PASS":
-                self._emit(Event(EventKind.PHASE, data={
-                    "phase": "build", "status": "complete", "iteration": iteration
-                }))
-                return
-
-            if self.require_approval and iteration < self.max_build_iterations:
-                self.pause()
-                self._emit(Event(EventKind.PHASE, data={
-                    "phase": "build", "iteration": iteration,
-                    "status": "waiting_for_continuation"
-                }))
-                await self._wait_if_paused()
-                if not self._running:
-                    return
-
-        self._emit(Event(EventKind.PHASE, data={"phase": "build", "status": "max_iterations"}))
-
-    def _apply_build_response(self, agent: str, role: str, iteration: int, response: str) -> str:
-        for filename, content in self.ws.parse_files(response).items():
-            self.ws.write_src(filename, content)
-            self._emit(Event(EventKind.FILE_WRITE, agent=agent,
-                             data={"file": filename, "preview": content[:120]}))
-
-        plan_update = self.ws.parse_section(response, "PLAN_UPDATE")
-        if plan_update:
-            self.ws.write("plan", f"# Plan\n\n{plan_update}")
-            self._emit(Event(EventKind.FILE_WRITE, agent=agent, data={"file": "PLAN.md"}))
-
-        design_bit = self.ws.parse_section(response, "DESIGN_APPEND")
-        if design_bit:
-            self.ws.append("design", design_bit, agent, f"Review iter {iteration}")
-
-        test_bit = self.ws.parse_section(response, "TEST_RESULTS_APPEND")
-        if test_bit:
-            self.ws.append("tests", test_bit, agent, f"Iter {iteration}")
-
-        return self.ws.parse_verdict(response, role)
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
