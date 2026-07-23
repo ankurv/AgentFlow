@@ -17,6 +17,11 @@ from backend.mcp_client import MCPManager
 
 from .agents.base import AgentBase, Message, Usage
 from .workspace.workspace import Workspace
+from pathlib import Path
+from .design_graph import DesignGraphStore, ContestType, ResolvedBy
+from .review_engine import run_independent_review, merge_findings, apply_merge_to_graph
+from .review_adapter import build_reviewers_for_component, PERSONA_TO_LENS
+from .contest_resolution import resolve_missing_constraint, resolve_judgment
 
 
 # ─── Events ──────────────────────────────────────────────────────────────────
@@ -236,6 +241,10 @@ class Orchestrator:
         self.agents = agents
         self.ws = workspace
         self._cb = event_cb
+        # Source of truth for architectural decisions; DESIGN.md becomes a
+        # rendered view of this graph rather than something agents write
+        # directly. Lives alongside the project's own workspace files.
+        self.design_graph = DesignGraphStore(metadata_dir=Path(self.ws.root) / ".agentflow")
         self.max_debate_rounds = max_debate_rounds
         self.max_tokens = max_tokens
         self.max_build_iterations = max_build_iterations
@@ -911,7 +920,13 @@ class Orchestrator:
                 f"Current Workspace snapshot:\n{agent_full_ctx}\n\n"
                 f"[OPTIONAL FILE UPDATES]\n"
                 f"You may optionally update workspace files directly by including these exact headers anywhere in your response. DO NOT wrap them in markdown code blocks:\n"
-                f"## DESIGN_UPDATE\n<complete updated design document>\n\n"
+                f"## DECISION_PROPOSAL\n"
+                f"component: <short name, e.g. 'logging' or 'database'>\n"
+                f"value: <what you're choosing>\n"
+                f"rationale: <why>\n"
+                f"depends_on: <comma-separated constraint keys or component names this choice assumed, or leave blank>\n"
+                f"(Use this for any real architectural decision. It gets reviewed by relevant specialists automatically — do not restate it in DESIGN_UPDATE.)\n\n"
+                f"## DESIGN_UPDATE\n<ONLY for free-form document prose that isn't a specific decision, e.g. an intro/summary paragraph. Do not use this to record component choices.>\n\n"
                 f"## PLAN_UPDATE\n<complete updated plan document>\n\n"
                 f"## DECISION_CHECKPOINT\n<if you need the user to make a critical decision (e.g. Postgres vs SQLite), summarize trade-offs and ask for decision>\n\n"
                 f"## QUESTIONS\n<if you need clarification from the user, write your questions here>\n\n"
@@ -1024,14 +1039,133 @@ class Orchestrator:
 
         design_update = self.ws.parse_section(response, "DESIGN_UPDATE")
         if design_update:
-            self.ws.write("design", f"# Architecture Design\n\n{design_update}")
-            self._emit(Event(EventKind.FILE_WRITE, agent=agent_name, data={"file": "DESIGN.md"}))
+            # Escape hatch only — see prompt note. Free prose never
+            # overwrites decisions in the graph.
+            self.ws.write("design_preamble", design_update)
 
         design_bit = self.ws.parse_section(response, "DESIGN_APPEND")
         if design_bit:
-            self.ws.append("design", design_bit, agent_name, "Coordinator-led Turn")
+            self.ws.append("design_preamble", design_bit, agent_name, "Coordinator-led Turn")
+
+        proposal_text = self.ws.parse_section(response, "DECISION_PROPOSAL")
+        if proposal_text:
+            self._apply_decision_proposal(agent_name, proposal_text)
+            # Regenerate DESIGN.md from the graph, not from agent text.
+            self.ws.write("design", self.design_graph.render_design_md(self.idea))
             self._emit(Event(EventKind.FILE_WRITE, agent=agent_name, data={"file": "DESIGN.md"}))
 
         test_bit = self.ws.parse_section(response, "TEST_RESULTS_APPEND")
         if test_bit:
             self.ws.append("tests", test_bit, agent_name, "Coordinator-led Turn")
+
+    def _apply_decision_proposal(self, agent_name: str, proposal_text: str):
+        """Parses a DECISION_PROPOSAL block and writes it into the graph —
+        propose if the component has no active decision yet, revise if it
+        does. The write is always scoped to the one named component, so
+        this can never clobber an unrelated decision the way raw
+        DESIGN_UPDATE text could."""
+        parsed = self._parse_decision_proposal(proposal_text)
+        component = parsed["component"]
+
+        dep_ids = []
+        for key in parsed["depends_on_keys"]:
+            constraint = self.design_graph.get_constraint(key)
+            if constraint:
+                dep_ids.append(constraint.id)
+                continue
+            other_decision = self.design_graph.get_active_decision_for_component(key)
+            if other_decision:
+                dep_ids.append(other_decision.id)
+            # else: agent named a dependency that doesn't exist yet — silently
+            # dropped rather than raising, so a slightly-early proposal doesn't
+            # crash the turn. Worth surfacing as a low-severity gap later.
+
+        existing = self.design_graph.get_active_decision_for_component(component)
+        if existing is None:
+            node = self.design_graph.propose_decision(
+                component=component, chosen_value=parsed["value"],
+                rationale=parsed["rationale"], proposed_by=agent_name,
+                depends_on=dep_ids,
+            )
+        else:
+            node = self.design_graph.revise_decision(
+                existing.id, new_value=parsed["value"],
+                rationale=parsed["rationale"], proposed_by=agent_name,
+            )
+
+        self._emit(Event(EventKind.PHASE, data={
+            "phase": "decision_proposed", "component": component, "decision_id": node.id,
+        }))
+        return node
+
+    @staticmethod
+    def _parse_decision_proposal(text: str) -> dict:
+        fields: dict[str, str] = {}
+        current_key = None
+        for line in text.splitlines():
+            m = re.match(r"^(component|value|rationale|depends_on)\s*:\s*(.*)$", line.strip(), re.IGNORECASE)
+            if m:
+                current_key = m.group(1).lower()
+                fields[current_key] = m.group(2).strip()
+            elif current_key and line.strip():
+                fields[current_key] += " " + line.strip()
+        if "component" not in fields or "value" not in fields:
+            raise ValueError(f"DECISION_PROPOSAL missing required 'component' or 'value' fields: {fields}")
+        depends_on_raw = fields.get("depends_on", "")
+        return {
+            "component": fields["component"],
+            "value": fields["value"],
+            "rationale": fields.get("rationale", ""),
+            "depends_on_keys": [d.strip() for d in depends_on_raw.split(",") if d.strip()],
+        }
+
+    async def _independent_review_phase(self, component: str):
+        """Runs the parallel, isolated specialist review for one component
+        and either applies findings silently (low-severity gaps) or pauses
+        for the user via a structured event — never via free-text steering.
+        NOTE: lens-relevance filtering here is deliberately naive (every
+        mapped persona reviews every component). Tighten this once you can
+        see which lenses actually produce useful findings vs. noise per
+        component type — see PERSONA_TO_LENS in review_adapter.py."""
+        persona_configs = {
+            a.config.role: a.config for a in self.agents if a.config.role in PERSONA_TO_LENS
+        }
+        if not persona_configs:
+            return
+        reviewers = await build_reviewers_for_component(persona_configs, list(persona_configs.keys()))
+        if not reviewers:
+            return
+
+        results = await run_independent_review(reviewers, component, self.design_graph)
+        merged = merge_findings(results)
+        applied = apply_merge_to_graph(component, merged, self.design_graph)
+
+        if applied["needs_user_questions"] or applied["needs_user_decision_cards"]:
+            self._emit(Event(EventKind.PHASE, data={
+                "phase": "contests_raised", "component": component,
+                "questions": applied["needs_user_questions"],
+                "decision_cards": applied["needs_user_decision_cards"],
+            }))
+            self.pause()
+        elif applied["high_severity_gaps"]:
+            self._emit(Event(EventKind.PHASE, data={
+                "phase": "gaps_found", "component": component,
+                "gaps": applied["high_severity_gaps"],
+            }))
+
+    def answer_contest_missing_constraint(self, decision_id: str, contest_id: str, key: str, value: str):
+        """Structured resume path for a missing-constraint question —
+        bypasses steer()/free text entirely. Call this directly from the
+        frontend's decision-card UI, not through the coordinator."""
+        result = resolve_missing_constraint(self.design_graph, decision_id, contest_id, key, value)
+        self.ws.write("design", self.design_graph.render_design_md(self.idea))
+        self.resume()
+        return result
+
+    def answer_contest_judgment(self, decision_id: str, contest_id: str, choice: str,
+                                 new_value: Optional[str] = None, new_rationale: Optional[str] = None):
+        """Structured resume path for a judgment tie-break."""
+        result = resolve_judgment(self.design_graph, decision_id, contest_id, choice, new_value, new_rationale)
+        self.ws.write("design", self.design_graph.render_design_md(self.idea))
+        self.resume()
+        return result
