@@ -116,6 +116,35 @@ Initial architecture.
 
 
 class SessionTests(unittest.TestCase):
+    def setUp(self):
+        import backend.auth
+        import backend.server
+
+        self._backend_auth = backend.auth
+        self._backend_server = backend.server
+        self._orig_users_path = backend.auth.USERS_PATH
+        self._orig_auth_manager = backend.auth.auth_manager
+        self._orig_server_auth_manager = backend.server.auth_manager
+        self._auth_tmpdir = tempfile.TemporaryDirectory()
+
+        backend.auth.USERS_PATH = Path(self._auth_tmpdir.name) / "users.json"
+        test_auth_manager = backend.auth.AuthManager()
+        backend.auth.auth_manager = test_auth_manager
+        backend.server.auth_manager = test_auth_manager
+        backend.server.app_states.clear()
+
+    def tearDown(self):
+        for state in self._backend_server.app_states.values():
+            if getattr(state, "orchestrator", None):
+                state.orchestrator.stop()
+            if getattr(state, "store", None):
+                state.store.close()
+        self._backend_auth.USERS_PATH = self._orig_users_path
+        self._backend_auth.auth_manager = self._orig_auth_manager
+        self._backend_server.auth_manager = self._orig_server_auth_manager
+        self._backend_server.app_states.clear()
+        self._auth_tmpdir.cleanup()
+
     def test_stateful_agent_sends_only_new_turn_and_tracks_cost(self):
         agent = StatefulFake(
             AgentConfig(

@@ -354,7 +354,11 @@ class DesignGraphStore:
                 break
         else:
             raise ValueError(f"No such contest: {contest_id}")
-        if all(c.resolved for c in node.contests):
+        # A node that's already been superseded (e.g. resolve_judgment called
+        # revise_decision first) must stay superseded — resolving its
+        # contest is a historical record, not a reason to revive it as the
+        # active decision.
+        if node.status != NodeStatus.SUPERSEDED and all(c.resolved for c in node.contests):
             node.status = NodeStatus.RESOLVED
         self._upsert_decision(node)
 
